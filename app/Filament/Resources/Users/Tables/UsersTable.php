@@ -34,6 +34,7 @@ class UsersTable
                           ->label('Телефон')
                           ->limit(25)
                           ->tooltip(static fn($record) => $record?->phone)
+                          ->state(fn($record) => is_null($record->phone) ? '-' : $record->phone)
                           ->searchable()
                           ->sortable()
                           ->toggleable(),

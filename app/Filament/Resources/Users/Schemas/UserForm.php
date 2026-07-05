@@ -28,8 +28,7 @@ class UserForm
                          ->maxLength(64)
                          ->validationMessages([
                              'regex' => 'Введите номер телефона',
-                         ])
-                         ->required(),
+                         ]),
                 Textarea::make('notes')
                         ->label('Особые приметы')
                         ->columnSpanFull(),
