@@ -36,6 +36,7 @@ class UserForm
                           ->label('Документы')
                           ->columnSpanFull()
                           ->image()
+                          ->optimize('webp', 85)
                           ->openable()
                           ->downloadable(),
             ]);
