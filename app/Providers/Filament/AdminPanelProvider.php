@@ -2,22 +2,29 @@
 
 namespace App\Providers\Filament;
 
+use Filament\Panel;
+use Livewire\Livewire;
+use Filament\PanelProvider;
+use Filament\Pages\Dashboard;
+use Filament\Facades\Filament;
+use App\Filament\Pages\Auth\Login;
+use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
+use Filament\Widgets\AccountWidget;
+use Illuminate\Contracts\View\View;
+use Filament\Widgets\FilamentInfoWidget;
 use Filament\Http\Middleware\Authenticate;
+use App\Livewire\LicenseExpirationNotifier;
+use App\Http\Middleware\EnsureLicenseIsActive;
+use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Cookie\Middleware\EncryptCookies;
 use Filament\Http\Middleware\AuthenticateSession;
+use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
-use Filament\Panel;
-use Filament\PanelProvider;
-use Filament\Support\Colors\Color;
-use Filament\Widgets\AccountWidget;
-use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
-use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
-use Illuminate\Routing\Middleware\SubstituteBindings;
-use Illuminate\Session\Middleware\StartSession;
-use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -27,7 +34,7 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
+            ->login(Login::class)
             ->authGuard('admin')
             ->colors([
                 'primary' => '#53b5ce',
@@ -61,8 +68,23 @@ class AdminPanelProvider extends PanelProvider
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
             ])
+            ->middleware([
+                EnsureLicenseIsActive::class,
+            ], isPersistent: true)
             ->authMiddleware([
                 Authenticate::class,
-            ]);
+            ])
+            ->renderHook(
+                PanelsRenderHook::HEAD_END,
+                fn (): View => view('filament.license-notification-styles', [
+                    'id' => LicenseExpirationNotifier::NOTIFICATION_ID,
+                ]),
+            )
+            ->renderHook(
+                PanelsRenderHook::BODY_END,
+                fn (): string => Filament::auth()->check()
+                    ? Livewire::mount(LicenseExpirationNotifier::class)
+                    : '',
+            );
     }
 }
