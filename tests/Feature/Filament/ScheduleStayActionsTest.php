@@ -402,6 +402,28 @@ class ScheduleStayActionsTest extends TestCase
         $this->assertSame('Правка', $stay->refresh()->notes);
     }
 
+    /** Просроченный гость, наложившийся со временем на бронь: оплата в окне правки сохраняется. */
+    public function test_edit_adds_payment_to_overdue_in_time_overlap(): void
+    {
+        $bed = $this->makeBed();
+        $this->makeStay($bed, '2026-11-23', '2026-11-26', StayStatus::Booked);
+        $stay = $this->makeStay($bed, '2026-11-18', '2026-11-22');
+
+        $undoFake = Repeater::fake();
+
+        $this->editStay($stay)
+            ->callAction(TestAction::make('add')->schemaComponent('payments'))
+            ->setActionData(['payments.0.amount' => 700])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotNotified()
+            ->assertActionNotMounted('editStay');
+
+        $undoFake();
+
+        $this->assertSame(700, (int) $stay->payments()->sum('amount'));
+    }
+
     /** После замены оплаты в окне правки полоса показывает новую сумму оплаты и долг. */
     public function test_edit_payments_refresh_bar_amounts(): void
     {

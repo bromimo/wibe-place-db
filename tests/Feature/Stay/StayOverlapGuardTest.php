@@ -261,4 +261,67 @@ class StayOverlapGuardTest extends TestCase
 
         $this->assertSame(0, Stay::query()->count());
     }
+
+    /** Пересечение, возникшее со временем: просроченный 18→22 и бронь 23→26 на одной койке (прямое создание моделей).
+     * @param StayStatus $status Состояние первого заселения.
+     * @return Stay
+     */
+    private function overlapByTime(StayStatus $status = StayStatus::Living): Stay
+    {
+        $this->stay('2026-11-23', '2026-11-26', StayStatus::Booked);
+
+        return $this->stay('2026-11-18', '2026-11-22', $status);
+    }
+
+    /** Правка без смены койки, дат и состояния сохраняется и в возникшем со временем пересечении. */
+    public function test_update_same_occupancy_in_time_overlap_saves(): void
+    {
+        $stay = $this->overlapByTime();
+        $dto = $this->dto('2026-11-18', '2026-11-22', StayStatus::Living, $stay->user_id);
+        $dto->notes = 'Оплатит завтра';
+
+        $result = (new UpdateStayAction())->run($stay, $dto);
+
+        $this->assertSame('Оплатит завтра', $result->notes);
+        $this->assertSame('2026-11-22', $result->date_to->toDateString());
+    }
+
+    /** Смена даты выезда в возникшем со временем пересечении проверяется как прежде. */
+    public function test_update_date_change_in_time_overlap_rejected(): void
+    {
+        $stay = $this->overlapByTime();
+
+        try {
+            (new UpdateStayAction())->run($stay, $this->dto('2026-11-18', '2026-11-25', StayStatus::Living, $stay->user_id));
+            $this->fail('Ожидалось StayOverlapException');
+        } catch (StayOverlapException) {
+            $this->assertSame('2026-11-22', $stay->fresh()->date_to->toDateString());
+        }
+    }
+
+    /** Выселившийся или бронь в том же положении при смене состояния на «проживает» отклоняются. */
+    public function test_update_to_living_in_time_overlap_position_rejected(): void
+    {
+        foreach ([StayStatus::CheckedOut, StayStatus::Booked] as $status) {
+            Stay::query()->delete();
+            $stay = $this->overlapByTime($status);
+
+            try {
+                (new UpdateStayAction())->run($stay, $this->dto('2026-11-18', '2026-11-22', StayStatus::Living, $stay->user_id));
+                $this->fail('Ожидалось StayOverlapException для ' . $status->value);
+            } catch (StayOverlapException) {
+                $this->assertSame($status, $stay->fresh()->status);
+            }
+        }
+    }
+
+    /** «Выселить» в возникшем со временем пересечении обрезает выезд днём заезда брони. */
+    public function test_check_out_in_time_overlap_clips(): void
+    {
+        $stay = $this->overlapByTime();
+
+        $result = (new CheckOutStayAction())->run($stay);
+
+        $this->assertSame('2026-11-23', $result->date_to->toDateString());
+    }
 }

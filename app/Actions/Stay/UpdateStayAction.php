@@ -45,7 +45,9 @@ class UpdateStayAction
     {
         $dto->assertValid();
 
-        (new GuardStayChangeAction())->assertBedFree($bed, $dto->date_from, $dto->date_to, $dto->status, $fresh->id);
+        if (! $this->keepsOccupancy($bed, $fresh, $dto)) {
+            (new GuardStayChangeAction())->assertBedFree($bed, $dto->date_from, $dto->date_to, $dto->status, $fresh->id);
+        }
 
         $price = (new ResolveStayPriceAction())->run($dto->tariff, $bed, $fresh, $dto->manual_total);
         $attributes = array_merge($dto->toUpdateArray(), $price);
@@ -53,5 +55,21 @@ class UpdateStayAction
         $fresh->update($attributes);
 
         return $fresh->refresh();
+    }
+
+    /** Правка не меняет занимаемое: та же койка, те же даты и то же состояние, что у свежей записи.
+     * Тогда пересечение не проверяется, чтобы в возникшем со временем пересечении (просрочка на чужую бронь)
+     * можно было сохранить примечание, тариф и оплаты.
+     * @param Bed $bed Заблокированная целевая койка.
+     * @param Stay $fresh Заселение, перечитанное под блокировкой.
+     * @param StayDto $dto Новые данные.
+     * @return bool
+     */
+    private function keepsOccupancy(Bed $bed, Stay $fresh, StayDto $dto): bool
+    {
+        return $bed->id === $fresh->bed_id
+            && $dto->status === $fresh->status
+            && $dto->date_from->toDateString() === $fresh->date_from->toDateString()
+            && $dto->date_to->toDateString() === $fresh->date_to->toDateString();
     }
 }
