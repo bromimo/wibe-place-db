@@ -52,4 +52,11 @@ class RoomResource extends Resource
             'edit' => EditRoom::route('/{record}/edit'),
         ];
     }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $count = static::getModel()::count();
+
+        return empty($count) ? '' : $count;
+    }
 }
