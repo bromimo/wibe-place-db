@@ -47,7 +47,7 @@ class Schedule extends Page
 
     protected static ?string $title = 'График';
     protected static ?string $navigationLabel = 'График';
-    protected static ?int $navigationSort = -3;
+    protected static ?int $navigationSort = 1;
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
     protected string $view = 'filament.pages.schedule';
     protected Width|string|null $maxContentWidth = Width::Full;
