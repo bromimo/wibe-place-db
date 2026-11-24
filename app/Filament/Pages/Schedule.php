@@ -42,6 +42,9 @@ class Schedule extends Page
     private const MIN_YEAR = 2000;
     private const MAX_YEAR = 2100;
 
+    /** Наибольший сдвиг выбранной даты за одно нажатие, в днях. */
+    private const MAX_SHIFT_DAYS = 366;
+
     protected static ?string $title = 'График';
     protected static ?string $navigationLabel = 'График';
     protected static ?int $navigationSort = -3;
@@ -67,12 +70,22 @@ class Schedule extends Page
         $this->date = $this->selectedDate()->toDateString();
     }
 
-    /** Сдвигает выбранную дату.
-     * @param int $days Число дней, может быть отрицательным.
+    /** Сдвигает выбранную дату; аргумент приходит из браузера, некорректный или больше года игнорируется.
+     * @param mixed $days Число дней, может быть отрицательным.
      * @return void
      */
-    public function shift(int $days): void
+    public function shift(mixed $days): void
     {
+        if (! is_int($days) && ! is_string($days)) {
+            return;
+        }
+
+        $days = filter_var($days, FILTER_VALIDATE_INT, ['options' => ['min_range' => -self::MAX_SHIFT_DAYS, 'max_range' => self::MAX_SHIFT_DAYS]]);
+
+        if ($days === false) {
+            return;
+        }
+
         $this->date = $this->selectedDate()->addDays($days)->toDateString();
     }
 

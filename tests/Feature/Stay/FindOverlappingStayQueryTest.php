@@ -165,4 +165,16 @@ class FindOverlappingStayQueryTest extends TestCase
 
         $this->assertSame("Койка занята: {$user->full_name} с 24.11 по 27.11", $exception->getMessage());
     }
+
+    /** Конфликт с просроченным: текст говорит, что гость не выселен и до какого дня был срок. */
+    public function test_exception_message_for_overdue(): void
+    {
+        $user = User::factory()->create();
+        $stay = $this->makeStay(20, 22);
+        $stay->update(['user_id' => $user->id]);
+
+        $exception = new StayOverlapException($stay->refresh());
+
+        $this->assertSame("Койка занята: {$user->full_name} с 20.11, не выселен (срок до 22.11)", $exception->getMessage());
+    }
 }

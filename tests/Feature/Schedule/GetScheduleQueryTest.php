@@ -216,6 +216,21 @@ class GetScheduleQueryTest extends TestCase
         $this->assertSame(1, $room['free'][2]);
     }
 
+    /** Пересечение, возникшее со временем (просрочка на чужую бронь), не даёт отрицательного числа свободных коек. */
+    public function test_free_never_negative(): void
+    {
+        $bed = Bed::factory()->create();
+        $this->makeStay('2026-11-15', '2026-11-22', StayStatus::Living, $bed);
+        $this->makeStay('2026-11-23', '2026-11-26', StayStatus::Booked, $bed);
+
+        $free = $this->schedule()['rooms'][0]['free'];
+
+        $this->assertSame(0, $free[0]);
+        $this->assertSame(0, $free[1]);
+        $this->assertSame(0, $free[2]);
+        $this->assertSame(1, $free[3]);
+    }
+
     /** Просроченное заселение до начала окна всё равно выбирается. */
     public function test_overdue_before_window_selected(): void
     {

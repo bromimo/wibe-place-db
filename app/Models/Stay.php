@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\StayStatus;
 use App\Enums\StayTariff;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use App\Abstracts\Models\AbstractModel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -66,10 +67,20 @@ class Stay extends AbstractModel
      */
     public function nights(): int
     {
-        $from = CarbonImmutable::parse($this->date_from->toDateString(), 'UTC');
-        $to = CarbonImmutable::parse($this->date_to->toDateString(), 'UTC');
+        return self::nightsBetween($this->date_from, $this->date_to);
+    }
 
-        return (int) $from->diffInDays($to);
+    /** Число ночей между днём заезда и днём выезда по календарным датам, без влияния перехода на летнее время.
+     * @param CarbonInterface $from День заезда.
+     * @param CarbonInterface $to День выезда.
+     * @return int
+     */
+    public static function nightsBetween(CarbonInterface $from, CarbonInterface $to): int
+    {
+        $fromUtc = CarbonImmutable::parse($from->toDateString(), 'UTC');
+        $toUtc = CarbonImmutable::parse($to->toDateString(), 'UTC');
+
+        return (int) $fromUtc->diffInDays($toUtc);
     }
 
     /** Стоимость проживания в гривнах.

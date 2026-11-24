@@ -13,6 +13,7 @@ use App\Models\Payment;
 use App\Enums\StayStatus;
 use App\Enums\StayTariff;
 use App\Filament\Pages\Schedule;
+use App\Filament\Schemas\StayForm;
 use Filament\Forms\Components\Repeater;
 use Filament\Actions\Testing\TestAction;
 use Livewire\Features\SupportTesting\Testable;
@@ -171,6 +172,88 @@ class ScheduleStayActionsTest extends TestCase
             ->assertHasActionErrors(['manual_total' => 'required']);
 
         $this->assertSame(0, Stay::query()->count());
+    }
+
+    /** Ручной тариф с суммой 0 принимается формой и сохраняется как 0. */
+    public function test_create_manual_zero_total_via_form(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create();
+
+        Livewire::test(Schedule::class)
+            ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
+            ->setActionData(['user_id' => $guest->id, 'tariff' => StayTariff::Manual->value, 'manual_total' => '0'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertActionNotMounted('createStay');
+
+        $stay = Stay::query()->firstOrFail();
+
+        $this->assertSame(StayTariff::Manual, $stay->tariff);
+        $this->assertSame(0, $stay->manual_total);
+        $this->assertSame(0, $stay->cost());
+    }
+
+    /** Даты формы ограничены годами 2000–2100: опечатка в годе даёт ошибку поля, а не «вечную» просрочку. */
+    public function test_create_dates_outside_years_rejected(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create();
+
+        Livewire::test(Schedule::class)
+            ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
+            ->setActionData(['user_id' => $guest->id, 'date_from' => '0202-11-24', 'date_to' => '2101-01-01'])
+            ->callMountedAction()
+            ->assertHasActionErrors(['date_from', 'date_to'])
+            ->assertActionMounted('createStay');
+
+        $this->assertSame(0, Stay::query()->count());
+    }
+
+    /** Подделанные гость и койка дают ошибки полей, а не 500/404. */
+    public function test_forged_guest_and_bed_rejected(): void
+    {
+        $bed = $this->makeBed();
+
+        Livewire::test(Schedule::class)
+            ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
+            ->setActionData(['user_id' => 999999, 'bed_id' => 999999])
+            ->callMountedAction()
+            ->assertHasActionErrors(['user_id', 'bed_id'])
+            ->assertActionMounted('createStay');
+
+        $this->assertSame(0, Stay::query()->count());
+    }
+
+    /** Строка стоимости: цена заселения в той же комнате, цена новой комнаты при смене, ночи через переход времени. */
+    public function test_cost_line_uses_price_rule_and_nights(): void
+    {
+        $bed = $this->makeBed();
+        $other = Bed::factory()->create(['room_id' => Room::factory()->create(['price' => 600])->id]);
+        $stay = Stay::factory()->create([
+            'bed_id' => $bed->id,
+            'date_from' => '2026-10-24',
+            'date_to' => '2026-10-26',
+            'status' => StayStatus::CheckedOut,
+            'price_per_night' => 400,
+        ]);
+
+        $this->editStay($stay)
+            ->assertMountedActionModalSee('Стоимость: 2 × 400 = 800')
+            ->setActionData(['bed_id' => $other->id])
+            ->assertMountedActionModalSee('Стоимость: 2 × 600 = 1200');
+    }
+
+    /** Поиск гостя находит по строке «Фамилия Имя» и по части телефона. */
+    public function test_guest_search_matches_full_name(): void
+    {
+        $guest = User::factory()->create(['last_name' => 'Марченко', 'first_name' => 'Максим', 'phone' => '+380501112233']);
+        User::factory()->create(['last_name' => 'Марченко', 'first_name' => 'Ольга', 'phone' => '+380671234567']);
+
+        $this->assertSame([$guest->id => 'Марченко Максим'], StayForm::searchGuests('Марченко Максим'));
+        $this->assertSame([$guest->id => 'Марченко Максим'], StayForm::searchGuests('  Максим   Марченко '));
+        $this->assertSame([$guest->id => 'Марченко Максим'], StayForm::searchGuests('Марченко 1112'));
+        $this->assertCount(2, StayForm::searchGuests('Марченко'));
     }
 
     /** Пересечение: уведомление с причиной, окно остаётся открытым с данными. */

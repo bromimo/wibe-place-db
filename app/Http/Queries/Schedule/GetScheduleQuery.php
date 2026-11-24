@@ -171,7 +171,7 @@ class GetScheduleQuery
 
         for ($i = 0; $i < $days; $i++) {
             $running += $occupied[$i];
-            $free[] = $total - $running;
+            $free[] = max(0, $total - $running);
         }
 
         return [

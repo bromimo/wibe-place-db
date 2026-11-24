@@ -9,6 +9,7 @@ use App\Models\User;
 use DateTimeImmutable;
 use App\Enums\StayStatus;
 use App\Enums\StayTariff;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -17,11 +18,16 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\DatePicker;
+use App\Actions\Stay\ResolveStayPriceAction;
 use Filament\Schemas\Components\Utilities\Get;
 
 /** Поля окна заселения на графике. */
 class StayForm
 {
+    /** Допустимый диапазон дат заселения: годы 2000–2100, как у дат из браузера на странице графика. */
+    private const MIN_DATE = '2000-01-01';
+    private const MAX_DATE = '2100-12-31';
+
     /** Поля формы; для правки заселения добавляются оплаты и строка «Оплачено / Долг».
      * @param Stay|null $stay Правимое заселение или null при создании.
      * @return array<int, mixed>
@@ -34,14 +40,19 @@ class StayForm
                 ->label('Койка')
                 ->options(self::bedOptions(...))
                 ->required()
+                ->exists(Bed::class, 'id')
                 ->live(),
             DatePicker::make('date_from')
                 ->label('Заезд')
                 ->required()
+                ->minDate(self::MIN_DATE)
+                ->maxDate(self::MAX_DATE)
                 ->live(),
             DatePicker::make('date_to')
                 ->label('Выезд')
                 ->required()
+                ->minDate(self::MIN_DATE)
+                ->maxDate(self::MAX_DATE)
                 ->after('date_from')
                 ->live(),
             Select::make('status')
@@ -138,17 +149,8 @@ class StayForm
             ->label('Гость')
             ->searchable()
             ->required()
-            ->getSearchResultsUsing(fn (string $search): array => User::query()
-                ->where(fn ($query) => $query
-                    ->where('last_name', 'like', "%{$search}%")
-                    ->orWhere('first_name', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%"))
-                ->orderBy('last_name')
-                ->orderBy('first_name')
-                ->limit(50)
-                ->get()
-                ->mapWithKeys(fn (User $user): array => [$user->id => $user->full_name])
-                ->all())
+            ->exists(User::class, 'id')
+            ->getSearchResultsUsing(fn (string $search): array => self::searchGuests($search))
             ->getOptionLabelUsing(fn ($value): ?string => User::query()->find($value)?->full_name)
             ->createOptionModalHeading('Новый клиент')
             ->createOptionForm([
@@ -169,6 +171,31 @@ class StayForm
                     ]),
             ])
             ->createOptionUsing(fn (array $data): int => User::query()->create($data)->id);
+    }
+
+    /** Гости для поля поиска: каждое слово запроса должно найтись в фамилии, имени или телефоне.
+     * @param string $search Строка поиска, например «Фамилия Имя».
+     * @return array<int, string>
+     */
+    public static function searchGuests(string $search): array
+    {
+        $words = preg_split('/\s+/u', trim($search), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $query = User::query();
+
+        foreach ($words as $word) {
+            $query->where(fn ($match) => $match
+                ->where('last_name', 'like', "%{$word}%")
+                ->orWhere('first_name', 'like', "%{$word}%")
+                ->orWhere('phone', 'like', "%{$word}%"));
+        }
+
+        return $query
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->limit(50)
+            ->get()
+            ->mapWithKeys(fn (User $user): array => [$user->id => $user->full_name])
+            ->all();
     }
 
     /** Койки, сгруппированные по комнатам.
@@ -228,7 +255,7 @@ class StayForm
     }
 
     /** Ночи, цена за ночь и итог по «нашему» тарифу.
-     * Для правки в той же комнате берётся зафиксированная цена заселения, иначе текущая цена комнаты.
+     * Цена — по общему правилу ResolveStayPriceAction, ночи — по Stay::nightsBetween().
      * @param Get $get Доступ к состоянию формы.
      * @param Stay|null $stay Правимое заселение.
      * @return array{nights: int, price: int, total: int}|null
@@ -249,21 +276,17 @@ class StayForm
             return null;
         }
 
-        $keepsPrice = $stay !== null
-            && $stay->tariff !== StayTariff::Manual
-            && $stay->bed->room_id === $bed->room_id;
-
-        $price = (int) ($keepsPrice ? $stay->price_per_night : $bed->room->price);
-        $nights = (int) $from->diff($to)->days;
+        $price = (int) (new ResolveStayPriceAction())->run(StayTariff::Standard, $bed, $stay, null)['price_per_night'];
+        $nights = Stay::nightsBetween($from, $to);
 
         return ['nights' => $nights, 'price' => $price, 'total' => $nights * $price];
     }
 
     /** Дата из состояния поля или null, если она некорректна.
      * @param mixed $value Значение поля.
-     * @return DateTimeImmutable|null
+     * @return CarbonImmutable|null
      */
-    private static function parseDate(mixed $value): ?DateTimeImmutable
+    private static function parseDate(mixed $value): ?CarbonImmutable
     {
         if ($value instanceof CarbonInterface) {
             $value = $value->toDateString();
@@ -275,6 +298,6 @@ class StayForm
 
         $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
 
-        return $parsed !== false && $parsed->format('Y-m-d') === $value ? $parsed : null;
+        return $parsed !== false && $parsed->format('Y-m-d') === $value ? CarbonImmutable::parse($value) : null;
     }
 }

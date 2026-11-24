@@ -128,6 +128,28 @@ class SchedulePageTest extends TestCase
             ->assertSet('date', '2026-11-24');
     }
 
+    /** Мусор в shift() из браузера не роняет страницу и не меняет дату; строка-число принимается. */
+    public function test_shift_garbage_is_harmless(): void
+    {
+        $this->login();
+
+        Livewire::test(Schedule::class)
+            ->call('shift', 'abc')
+            ->assertOk()
+            ->assertSet('date', '2026-11-24')
+            ->call('shift', ['x'])
+            ->assertSet('date', '2026-11-24')
+            ->call('shift', null)
+            ->assertSet('date', '2026-11-24')
+            ->call('shift', 1.5)
+            ->assertSet('date', '2026-11-24')
+            ->call('shift', PHP_INT_MAX)
+            ->assertOk()
+            ->assertSet('date', '2026-11-24')
+            ->call('shift', '-7')
+            ->assertSet('date', '2026-11-17');
+    }
+
     /** Атрибуты полос для перетаскивания. */
     public function test_bar_data_attributes(): void
     {
