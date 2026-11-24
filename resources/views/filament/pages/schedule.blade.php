@@ -168,9 +168,19 @@
         .sch-stay-details .fi-section.fi-collapsed { display: none; }
         .sch-stay-buttons .sch-stay-details-toggle { margin-inline-start: auto; }
 
-        .sch-stay-edit .fi-modal-footer-actions { width: 100%; justify-content: flex-end; }
+        :is(.sch-stay-edit, .sch-guest-card) .fi-modal-footer-actions { width: 100%; justify-content: flex-end; }
         .sch-stay-edit .fi-modal-footer-actions > .sch-stay-delete { order: -1; margin-inline-end: auto; }
-        .sch-stay-edit .fi-modal-footer-actions > .sch-stay-submit { order: 1; }
+        :is(.sch-stay-edit, .sch-guest-card) .fi-modal-footer-actions > .sch-stay-submit { order: 1; }
+
+        /* Окно «Клиент» после выбора гостя в списке: строка гостя и документы — общие с окном заселения. */
+        .sch-guest-card-info { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; min-width: 0; }
+        .sch-guest-card-label { font-size: .875rem; color: #6b7280; }
+        .sch-guest-card-notes { max-width: 100%; white-space: pre-line; overflow-wrap: anywhere; }
+        .sch-guest-card-stays {
+            margin-top: .5rem; padding: .125rem .625rem; border-radius: 9999px;
+            background: #e5e7eb; color: #374151; font-size: .8125rem; font-weight: 600; line-height: 1.25rem;
+        }
+        .sch-guest-card-stays-active { background: #38649c; color: #fff; }
 
         /* Цвета кнопок окон заселения как в прежней программе; только кнопки с классом sch-btn-* внутри этих окон. */
         .sch-stay-window .fi-btn.sch-btn-indigo { --sch-btn-bg: #4338ca; --sch-btn-hover: #3730a3; --sch-btn-text: #fff; }

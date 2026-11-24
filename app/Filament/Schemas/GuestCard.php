@@ -4,11 +4,12 @@ namespace App\Filament\Schemas;
 
 use App\Models\User;
 use Filament\Actions\Action;
+use Filament\Support\Enums\Width;
+use Illuminate\Support\HtmlString;
 use Filament\Forms\Components\Select;
-use Filament\Schemas\Components\Text;
+use Filament\Schemas\Components\Grid;
+use Filament\Schemas\Components\Html;
 use Filament\Actions\Contracts\HasActions;
-use Filament\Infolists\Components\TextEntry;
-use Filament\Infolists\Components\ImageEntry;
 
 /** Окно «Клиент» поверх окна заселения: данные выбранного в списке гостя и кнопки «Отменить» / «Выбрать». */
 class GuestCard
@@ -17,14 +18,23 @@ class GuestCard
     public const ACTION = 'guestCard';
 
     /** Действие окна; гость попадает в поле только по «Выбрать», закрытие окна иначе поле не меняет.
+     * Оформлено как окно заселения: та же ширина, линии под шапкой и над подвалом, цвета и порядок кнопок.
      * @return Action
      */
     public static function action(): Action
     {
         return Action::make(self::ACTION)
             ->modalHeading('Клиент')
+            // Без автофокуса: иначе фокус встаёт на превью документов или на «Выбрать», и кнопка выглядит нажатой.
+            ->modalAutofocus(false)
             ->modalSubmitActionLabel('Выбрать')
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-stay-submit sch-btn-green']))
             ->modalCancelActionLabel('Отменить')
+            ->modalCancelAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-neutral']))
+            ->modalWidth(Width::TwoExtraLarge)
+            ->stickyModalHeader()
+            ->stickyModalFooter()
+            ->extraModalWindowAttributes(['class' => 'sch-stay-window sch-guest-card'])
             ->schema(fn (array $arguments): array => self::entries(self::findUser($arguments['user'] ?? null)))
             ->action(function (array $arguments, Select $component): void {
                 $user = self::findUser($arguments['user'] ?? null);
@@ -66,7 +76,8 @@ class GuestCard
         $livewire->mountAction(self::ACTION, ['user' => $user->id], ['schemaComponent' => $component->getKey()]);
     }
 
-    /** Данные гостя только для чтения.
+    /** Данные гостя только для чтения: строка «Фамилия Имя» с телефоном, под ней документы слева,
+     * особые приметы и число заселений справа.
      * @param User|null $user Гость.
      * @return array<int, mixed>
      */
@@ -77,28 +88,30 @@ class GuestCard
         }
 
         return [
-            TextEntry::make('last_name')
-                ->label('Фамилия')
-                ->state($user->last_name),
-            TextEntry::make('first_name')
-                ->label('Имя')
-                ->state($user->first_name),
-            TextEntry::make('phone')
-                ->label('Телефон')
-                ->state($user->phone)
-                ->placeholder('—'),
-            TextEntry::make('notes')
-                ->label('Особые приметы')
-                ->state($user->notes)
-                ->placeholder('—'),
-            ImageEntry::make('docs')
-                ->label('Документы')
-                ->state(GuestDocs::url($user->docs))
-                ->placeholder('нет')
-                ->url(fn (?string $state): ?string => $state)
-                ->openUrlInNewTab(),
-            Text::make('Заселений: ' . $user->stays()->count()),
+            Html::make(StayForm::guestHtml($user->id, null))->key('guestRow'),
+            Grid::make(['default' => 1, 'sm' => 2])->schema([
+                Html::make(StayForm::docsHtml($user->id))->key('docsRow'),
+                Html::make(self::infoHtml($user))->key('infoRow'),
+            ]),
         ];
+    }
+
+    /** Особые приметы серой подписью с текстом под ней (прочерк, если пусто) и плашка «Заселений: N»:
+     * серая без заселений, синяя от одного.
+     * @param User $user Гость.
+     * @return HtmlString
+     */
+    private static function infoHtml(User $user): HtmlString
+    {
+        $notes = filled($user->notes) ? $user->notes : '—';
+        $stays = $user->stays()->count();
+        $staysClass = $stays > 0 ? 'sch-guest-card-stays sch-guest-card-stays-active' : 'sch-guest-card-stays';
+
+        return new HtmlString(
+            '<div class="sch-guest-card-info"><span class="sch-guest-card-label">Особые приметы</span>'
+            . '<span class="sch-guest-card-notes">' . e($notes) . '</span>'
+            . '<span class="' . $staysClass . '">Заселений: ' . $stays . '</span></div>'
+        );
     }
 
     /** Гость по id из аргументов окна или поля; некорректный или несуществующий id даёт null.

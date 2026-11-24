@@ -386,12 +386,13 @@ class StayForm
         return $options;
     }
 
-    /** Строка гостя: «Фамилия Имя» крупно слева с карандашом правки клиента, телефон справа (прочерк, если пуст).
+    /** Строка гостя окна заселения и окна «Клиент»: «Фамилия Имя» крупно слева с карандашом правки клиента,
+     * телефон справа (прочерк, если пуст).
      * @param mixed $userId Id гостя из формы.
-     * @param Action|null $editGuest Карандаш «Редактировать клиента»; не показывается без гостя.
+     * @param Action|null $editGuest Карандаш «Редактировать клиента»; не показывается без гостя или при null.
      * @return HtmlString
      */
-    private static function guestHtml(mixed $userId, ?Action $editGuest): HtmlString
+    public static function guestHtml(mixed $userId, ?Action $editGuest): HtmlString
     {
         $user = is_numeric($userId) ? User::query()->find((int) $userId) : null;
         $name = $user === null ? '—' : $user->full_name;
@@ -404,11 +405,12 @@ class StayForm
         );
     }
 
-    /** Блок «Документы»: превью фото документов гостя со ссылкой в новой вкладке или серое «Документы: нет».
+    /** Блок «Документы» окна заселения и окна «Клиент»: превью фото документов гостя со ссылкой в новой вкладке
+     * или серое «Документы: нет».
      * @param mixed $userId Id гостя из формы.
      * @return HtmlString
      */
-    private static function docsHtml(mixed $userId): HtmlString
+    public static function docsHtml(mixed $userId): HtmlString
     {
         $user = is_numeric($userId) ? User::query()->find((int) $userId) : null;
         $url = GuestDocs::url($user?->docs);
