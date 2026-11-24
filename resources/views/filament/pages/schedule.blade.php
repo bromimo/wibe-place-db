@@ -132,6 +132,7 @@
 
         .sch-stay-guest { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
         .sch-stay-guest-name { font-size: 1.25rem; font-weight: 700; }
+        .sch-stay-guest-title { display: inline-flex; align-items: center; gap: .25rem; }
         .sch-stay-guest-phone { font-size: 1rem; color: #4b5563; }
 
         .sch-stay-docs { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; }
@@ -170,6 +171,27 @@
         .sch-stay-edit .fi-modal-footer-actions { width: 100%; justify-content: flex-end; }
         .sch-stay-edit .fi-modal-footer-actions > .sch-stay-delete { order: -1; margin-inline-end: auto; }
         .sch-stay-edit .fi-modal-footer-actions > .sch-stay-submit { order: 1; }
+
+        /* Цвета кнопок окон заселения как в прежней программе; только кнопки с классом sch-btn-* внутри этих окон. */
+        .sch-stay-window .fi-btn.sch-btn-indigo { --sch-btn-bg: #4338ca; --sch-btn-hover: #3730a3; --sch-btn-text: #fff; }
+        .sch-stay-window .fi-btn.sch-btn-blue { --sch-btn-bg: #2f80c9; --sch-btn-hover: #2668a6; --sch-btn-text: #fff; }
+        .sch-stay-window .fi-btn.sch-btn-green { --sch-btn-bg: #3a9d3f; --sch-btn-hover: #2f8234; --sch-btn-text: #fff; }
+        .sch-stay-window .fi-btn.sch-btn-neutral { --sch-btn-bg: #e5e7eb; --sch-btn-hover: #d1d5db; --sch-btn-text: #374151; }
+        .sch-stay-window .fi-btn:is(.sch-btn-indigo, .sch-btn-blue, .sch-btn-green, .sch-btn-neutral) {
+            background-color: var(--sch-btn-bg); color: var(--sch-btn-text); box-shadow: none;
+        }
+        .sch-stay-window .fi-btn:is(.sch-btn-indigo, .sch-btn-blue, .sch-btn-green, .sch-btn-neutral) :is(.fi-icon, .fi-btn-label, .fi-loading-indicator) {
+            color: var(--sch-btn-text);
+        }
+        .sch-stay-window .fi-btn:is(.sch-btn-indigo, .sch-btn-blue, .sch-btn-green, .sch-btn-neutral):is(:hover, :focus-visible):not(.fi-disabled, [disabled]) {
+            background-color: var(--sch-btn-hover);
+        }
+        .sch-stay-window .fi-btn:is(.sch-btn-indigo, .sch-btn-blue, .sch-btn-green, .sch-btn-neutral):focus-visible {
+            outline: 2px solid var(--sch-btn-bg); outline-offset: 2px;
+        }
+        .sch-stay-window .fi-btn:is(.sch-btn-indigo, .sch-btn-blue, .sch-btn-green, .sch-btn-neutral):is(.fi-disabled, [disabled]) {
+            opacity: .55; cursor: not-allowed;
+        }
     </style>
 
     <div class="sch-toolbar">

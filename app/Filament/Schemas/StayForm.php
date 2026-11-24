@@ -66,13 +66,16 @@ class StayForm
     /** Окно правки: гость, даты с ночами, тариф со стоимостью, деньги, быстрая оплата, кнопки и «Детали заселения».
      * @param Stay $stay Правимое заселение.
      * @param Action $takePayment Кнопка «Оплата» быстрого приёма оплаты.
+     * @param Action $editGuest Карандаш «Редактировать клиента» в строке гостя.
      * @param array<int, Action|null> $stateActions Кнопки смены состояния: «Заселить», «Выезд».
      * @return array<int, mixed>
      */
-    public static function editComponents(Stay $stay, Action $takePayment, array $stateActions): array
+    public static function editComponents(Stay $stay, Action $takePayment, Action $editGuest, array $stateActions): array
     {
         return [
-            Html::make(fn (Get $get): HtmlString => self::guestHtml($get('user_id')))->key('guestRow'),
+            Html::make(fn (Get $get, Html $component): HtmlString => self::guestHtml($get('user_id'), $component->getAction($editGuest->getName())))
+                ->key('guestRow')
+                ->registerActions([$editGuest]),
             Html::make(fn (Get $get): HtmlString => self::docsHtml($get('user_id')))->key('docsRow'),
             GuestDocs::uploadGroup(),
             self::datesRow($stay),
@@ -93,7 +96,7 @@ class StayForm
                     ->label('Детали заселения')
                     ->color('gray')
                     ->icon(Heroicon::ChevronUpDown)
-                    ->extraAttributes(['class' => 'sch-stay-details-toggle'])
+                    ->extraAttributes(['class' => 'sch-stay-details-toggle sch-btn-blue'])
                     ->alpineClickHandler("\$dispatch('toggle-section', { id: '" . self::DETAILS_ID . "' })"),
             ])
                 ->key('stayButtons')
@@ -379,18 +382,20 @@ class StayForm
         return $options;
     }
 
-    /** Строка гостя: «Фамилия Имя» крупно слева, телефон справа (прочерк, если пуст).
+    /** Строка гостя: «Фамилия Имя» крупно слева с карандашом правки клиента, телефон справа (прочерк, если пуст).
      * @param mixed $userId Id гостя из формы.
+     * @param Action|null $editGuest Карандаш «Редактировать клиента»; не показывается без гостя.
      * @return HtmlString
      */
-    private static function guestHtml(mixed $userId): HtmlString
+    private static function guestHtml(mixed $userId, ?Action $editGuest): HtmlString
     {
         $user = is_numeric($userId) ? User::query()->find((int) $userId) : null;
         $name = $user === null ? '—' : $user->full_name;
         $phone = filled($user?->phone) ? $user->phone : '—';
+        $icon = $user === null || $editGuest === null ? '' : $editGuest->toHtml();
 
         return new HtmlString(
-            '<div class="sch-stay-guest"><span class="sch-stay-guest-name">' . e($name) . '</span>'
+            '<div class="sch-stay-guest"><span class="sch-stay-guest-title"><span class="sch-stay-guest-name">' . e($name) . '</span>' . $icon . '</span>'
             . '<span class="sch-stay-guest-phone">' . e($phone) . '</span></div>'
         );
     }

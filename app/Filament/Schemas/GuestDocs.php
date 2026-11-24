@@ -56,6 +56,7 @@ class GuestDocs
         return Action::make('saveGuestDocs')
             ->label('Сохранить документ')
             ->button()
+            ->extraAttributes(['class' => 'sch-btn-indigo'])
             ->action(function (FileUpload $component, Get $get): void {
                 $user = self::findUser($get('user_id'));
                 $files = array_filter((array) $component->getRawState(), fn (mixed $file): bool => $file instanceof TemporaryUploadedFile);

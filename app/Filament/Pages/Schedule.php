@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use BackedEnum;
 use App\Models\Bed;
 use App\Models\Stay;
+use App\Models\User;
 use DomainException;
 use DateTimeImmutable;
 use Filament\Pages\Page;
@@ -20,6 +21,8 @@ use App\Filament\Schemas\StayForm;
 use Illuminate\Support\Facades\DB;
 use App\Actions\Stay\MoveStayAction;
 use Filament\Support\Icons\Heroicon;
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Html;
 use Filament\Support\Exceptions\Halt;
 use App\Actions\Stay\CreateStayAction;
 use App\Actions\Stay\DeleteStayAction;
@@ -34,6 +37,7 @@ use App\Actions\Stay\SyncStayPaymentsAction;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use App\Http\Queries\Schedule\GetScheduleQuery;
+use App\Filament\Resources\Users\Schemas\UserForm;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /** График заселения: койки по дням с полосами заселений. */
@@ -156,8 +160,12 @@ class Schedule extends Page
         return Action::make('createStay')
             ->modalHeading('Новое заселение')
             ->modalSubmitActionLabel('Создать')
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-green']))
             ->modalCancelActionLabel('Отмена')
+            ->modalCancelAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-neutral']))
             ->modalWidth(Width::TwoExtraLarge)
+            ->stickyModalHeader()
+            ->stickyModalFooter()
             ->extraModalWindowAttributes(['class' => 'sch-stay-window'])
             ->schema(StayForm::createComponents())
             ->mountUsing(function (Action $action, ?Schema $schema, array $arguments): void {
@@ -192,14 +200,18 @@ class Schedule extends Page
         return Action::make('editStay')
             ->modalHeading(fn (array $arguments): ?Htmlable => ($stay = $this->findStay($arguments)) ? StayForm::editHeading($stay) : null)
             ->modalSubmitActionLabel('Сохранить изменения')
-            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-stay-submit']))
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-stay-submit sch-btn-green']))
             ->modalCancelActionLabel('Закрыть')
+            ->modalCancelAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-neutral']))
             ->modalWidth(Width::TwoExtraLarge)
+            ->stickyModalHeader()
+            ->stickyModalFooter()
             ->extraModalWindowAttributes(['class' => 'sch-stay-window sch-stay-edit'])
             ->registerModalActions([fn (array $arguments): array => $this->stayStateActions($this->findStay($arguments))])
             ->schema(fn (array $arguments, Action $action): array => ($stay = $this->findStay($arguments)) === null ? [] : StayForm::editComponents(
                 $stay,
                 $this->takePaymentAction($stay),
+                $this->editGuestAction(),
                 [$action->getModalAction('checkIn'), $action->getModalAction('checkOut')],
             ))
             ->mountUsing(function (Action $action, ?Schema $schema, array $arguments): void {
@@ -251,6 +263,7 @@ class Schedule extends Page
             ->label('Оплата')
             ->button()
             ->color('success')
+            ->extraAttributes(['class' => 'sch-btn-indigo'])
             ->action(function (Get $get, Set $set) use ($stay): void {
                 $amount = filter_var($get('quick_payment'), FILTER_VALIDATE_INT);
 
@@ -277,6 +290,62 @@ class Schedule extends Page
             });
     }
 
+    /** Карандаш «Редактировать клиента» в строке гостя окна правки: форма клиента поверх окна заселения.
+     * Правит гостя формы; после «Сохранить» окно заселения и полоса графика показывают свежие данные, несохранённые правки остаются.
+     * @return Action
+     */
+    private function editGuestAction(): Action
+    {
+        return Action::make('editGuest')
+            ->label('Редактировать клиента')
+            ->tooltip('Редактировать клиента')
+            ->iconButton()
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('gray')
+            ->extraAttributes(['class' => 'sch-stay-guest-edit', 'aria-label' => 'Редактировать клиента'])
+            ->modalHeading(fn (Get $get): string => 'Клиент: ' . ($this->findGuest($get('user_id'))?->full_name ?? ''))
+            ->modalSubmitActionLabel('Сохранить')
+            ->modalCancelActionLabel('Отмена')
+            ->modalWidth(Width::FourExtraLarge)
+            ->schema(fn (Schema $schema, Get $get): Schema => UserForm::configure($schema->record($this->findGuest($get('user_id')))))
+            ->fillForm(fn (Get $get): array => $this->findGuest($get('user_id'))?->attributesToArray() ?? [])
+            ->action(function (array $data, Get $get, Html $component): void {
+                $guest = $this->findGuest($get('user_id'));
+
+                if ($guest === null) {
+                    return;
+                }
+
+                $guest->update($data);
+
+                $guestSelect = $component->getRootContainer()->getComponent(
+                    fn (mixed $field): bool => $field instanceof Select && $field->getName() === 'user_id',
+                    withHidden: true,
+                );
+
+                if ($guestSelect instanceof Select) {
+                    $guestSelect->refreshSelectedOptionLabel();
+                }
+
+                Notification::make()->success()->title('Клиент сохранён')->send();
+
+                // Действие перерисовывает только окна; имени гостя на полосе графика нужна полная перерисовка страницы.
+                $this->refreshSchedule();
+                $this->forceRender();
+            });
+    }
+
+    /** Гость по id из формы; некорректный или несуществующий id даёт null.
+     * @param mixed $id Id гостя.
+     * @return User|null
+     */
+    private function findGuest(mixed $id): ?User
+    {
+        $id = $this->toId($id);
+
+        return $id === null ? null : User::query()->find($id);
+    }
+
     /** Кнопки смены состояния в окне правки: заселить, выезд.
      * @param Stay|null $stay Правимое заселение.
      * @return array<int, Action>
@@ -287,6 +356,7 @@ class Schedule extends Page
             Action::make('checkIn')
                 ->label('Заселить')
                 ->color('success')
+                ->extraAttributes(['class' => 'sch-btn-neutral'])
                 ->visible($stay?->status === StayStatus::Booked)
                 ->cancelParentActions()
                 ->action(function (Action $action) use ($stay): void {
@@ -295,6 +365,7 @@ class Schedule extends Page
             Action::make('checkOut')
                 ->label('Выезд')
                 ->color('warning')
+                ->extraAttributes(['class' => 'sch-btn-neutral'])
                 ->visible($stay?->status === StayStatus::Living)
                 ->requiresConfirmation()
                 ->modalHeading('Выселить гостя?')

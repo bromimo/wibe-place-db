@@ -245,4 +245,25 @@ class ScheduleStayWindowTest extends TestCase
             ->assertMountedActionModalSeeHtml('sch-stay-nights-value">1<')
             ->assertMountedActionModalDontSee(['Оплачено', 'Принять оплату', 'Детали заселения']);
     }
+
+    /** Оба окна заселения отделяют заголовок и подвал линиями (закреплённые шапка и подвал Filament); вложенные окна — нет. */
+    public function test_stay_windows_have_divided_header_and_footer(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+
+        $this->editStay($stay)
+            ->assertMountedActionModalSeeHtml(['fi-modal-has-sticky-header', 'fi-modal-has-sticky-footer']);
+
+        $html = Livewire::test(Schedule::class)
+            ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-25'])
+            ->assertMountedActionModalSeeHtml(['fi-modal-has-sticky-header', 'fi-modal-has-sticky-footer'])
+            ->mountAction(TestAction::make('createOption')->schemaComponent('user_id'))
+            ->assertMountedActionModalSee('Новый клиент')
+            ->getMountedActionModalHtml();
+
+        // Разметка содержит оба окна: линии только у окна заселения, у «Новый клиент» — нет.
+        $this->assertSame(1, substr_count($html, 'fi-modal-has-sticky-header'));
+        $this->assertSame(1, substr_count($html, 'fi-modal-has-sticky-footer'));
+    }
 }
