@@ -2,17 +2,19 @@
 
 namespace App\Filament\Resources\Rooms\Schemas;
 
-use App\Models\Bed;
-use Filament\Actions\Action;
+use App\Models\Room;
 use Filament\Schemas\Schema;
-use Filament\Forms\Components\Repeater;
-use App\Exceptions\BedHasStaysException;
+use Filament\Schemas\Components\Text;
 use Filament\Forms\Components\TextInput;
-use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 
-/** Форма комнаты с койками. */
+/** Форма комнаты: номер, название, цена и число коек. */
 class RoomForm
 {
+    /** Наибольшее число коек в комнате. */
+    public const MAX_BEDS = 50;
+
     /** Настраивает форму комнаты.
      * @param Schema $schema Схема формы.
      * @return Schema
@@ -20,67 +22,73 @@ class RoomForm
     public static function configure(Schema $schema): Schema
     {
         return $schema
-            ->columns(3)
+            ->columns(4)
             ->components([
+                TextInput::make('number')
+                    ->label('Номер')
+                    ->integer()
+                    ->minValue(1)
+                    ->required()
+                    ->unique(ignoreRecord: true)
+                    ->default(fn (): int => self::nextNumber())
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(self::followNumber(...)),
                 TextInput::make('name')
                     ->label('Название')
                     ->maxLength(255)
-                    ->required(),
+                    ->required()
+                    ->default(fn (): string => Room::defaultName(self::nextNumber())),
                 TextInput::make('price')
                     ->label('Цена за ночь')
                     ->integer()
                     ->minValue(0)
                     ->required(),
-                TextInput::make('sort')
-                    ->label('Порядок')
+                TextInput::make('bed_count')
+                    ->label('Количество коек')
                     ->integer()
                     ->minValue(0)
-                    ->default(0)
-                    ->required(),
-                Repeater::make('beds')
-                    ->label('Койки')
-                    ->relationship('beds')
-                    ->columns(2)
-                    ->columnSpanFull()
-                    ->addActionLabel('Добавить койку')
-                    ->deleteAction(fn (Action $action): Action => $action->before(self::guardBedDeletion(...)))
-                    ->schema([
-                        TextInput::make('name')
-                            ->label('Название')
-                            ->maxLength(255)
-                            ->required(),
-                        TextInput::make('sort')
-                            ->label('Порядок')
-                            ->integer()
-                            ->minValue(0)
-                            ->default(0)
-                            ->required(),
-                    ]),
+                    ->maxValue(self::MAX_BEDS)
+                    ->required()
+                    ->default(1),
+                Text::make(fn (?Room $record): string => self::bedsLine($record))
+                    ->visibleOn('edit')
+                    ->columnSpanFull(),
             ]);
     }
 
-    /** Не даёт убрать из формы сохранённую койку с заселениями.
-     * @param array<string, mixed> $arguments Аргументы действия: ключ элемента repeater.
-     * @param Action $action Действие удаления элемента.
+    /** Следующий свободный номер: наибольший существующий плюс один.
+     * @return int
+     */
+    private static function nextNumber(): int
+    {
+        return (int) Room::query()->max('number') + 1;
+    }
+
+    /** При создании переносит номер в название, пока название не изменено вручную.
+     * @param Get $get Доступ к состоянию формы.
+     * @param Set $set Запись в состояние формы.
+     * @param int|string|null $old Прежний номер.
+     * @param int|string|null $state Новый номер.
+     * @param string $operation Операция формы.
      * @return void
      */
-    private static function guardBedDeletion(array $arguments, Action $action): void
+    private static function followNumber(Get $get, Set $set, int|string|null $old, int|string|null $state, string $operation): void
     {
-        $item = (string) ($arguments['item'] ?? '');
+        $name = (string) $get('name');
 
-        if (! str_starts_with($item, 'record-')) {
-            return;
+        if ($operation === 'create' && ($name === '' || $name === Room::defaultName($old))) {
+            $set('name', Room::defaultName($state));
         }
+    }
 
-        $hasStays = Bed::query()
-            ->whereKey(substr($item, strlen('record-')))
-            ->whereHas('stays')
-            ->exists();
+    /** Строка с названиями коек комнаты.
+     * @param Room|null $record Комната.
+     * @return string
+     */
+    private static function bedsLine(?Room $record): string
+    {
+        $names = $record?->beds()->pluck('name')->all() ?? [];
 
-        if ($hasStays) {
-            Notification::make()->danger()->title((new BedHasStaysException())->getMessage())->send();
-
-            $action->cancel();
-        }
+        return 'Койки: ' . ($names === [] ? 'нет' : implode(', ', $names));
     }
 }

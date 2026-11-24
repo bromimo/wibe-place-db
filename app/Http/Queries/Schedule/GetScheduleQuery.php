@@ -30,9 +30,8 @@ class GetScheduleQuery
         $todayIndex = $this->index($base, today()->toDateString());
 
         $rooms = Room::query()
-            ->with(['beds' => fn ($query) => $query->orderBy('sort')->orderBy('id')])
-            ->orderBy('sort')
-            ->orderBy('id')
+            ->with('beds')
+            ->orderBy('number')
             ->get();
         $stays = $this->loadStays($rooms, $base, $days)->groupBy('bed_id');
 

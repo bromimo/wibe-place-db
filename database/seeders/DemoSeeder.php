@@ -9,18 +9,19 @@ use App\Dto\Stay\StayDto;
 use App\Enums\StayStatus;
 use App\Enums\StayTariff;
 use Illuminate\Database\Seeder;
+use App\Actions\Room\CreateRoomAction;
 use App\Actions\Stay\CreateStayAction;
 use App\Actions\Stay\SyncStayPaymentsAction;
 
 /** Демо-данные графика заселения: комнаты, койки, гости и заселения относительно сегодняшнего дня. */
 class DemoSeeder extends Seeder
 {
-    /** Комнаты: название, цена за ночь, число коек. */
+    /** Комнаты: номер, цена за ночь, число коек. */
     private const ROOMS = [
-        ['1 комната', 460, 5],
-        ['2 комната', 600, 1],
-        ['3 комната', 460, 8],
-        ['4 комната', 460, 3],
+        [1, 460, 5],
+        [2, 600, 1],
+        [3, 460, 8],
+        [4, 460, 3],
     ];
 
     /** Гости: фамилия и имя; последний — с длинным именем для проверки обрезки текста. */
@@ -81,19 +82,18 @@ class DemoSeeder extends Seeder
         $this->stay($beds['1.2'], $guests[2], 0, 3, StayStatus::Booked, payments: [460]);
     }
 
-    /** Создаёт комнаты с койками «{номер комнаты}.{номер}».
+    /** Создаёт через действие комнаты «N кімната» с койками «{номер комнаты}.{номер}.».
      * @return array<string, Bed>
      */
     private function createRooms(): array
     {
         $beds = [];
 
-        foreach (self::ROOMS as $index => [$name, $price, $bedCount]) {
-            $number = $index + 1;
-            $room = Room::query()->create(['name' => $name, 'price' => $price, 'sort' => $number]);
+        foreach (self::ROOMS as [$number, $price, $bedCount]) {
+            $room = (new CreateRoomAction())->run($number, Room::defaultName($number), $price, $bedCount);
 
-            for ($bed = 1; $bed <= $bedCount; $bed++) {
-                $beds["{$number}.{$bed}"] = $room->beds()->create(['name' => "{$number}.{$bed}", 'sort' => $bed]);
+            foreach ($room->beds as $bed) {
+                $beds["{$number}.{$bed->number}"] = $bed;
             }
         }
 

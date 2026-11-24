@@ -205,7 +205,7 @@ class StayForm
     {
         $options = [];
 
-        $rooms = Room::query()->with('beds')->orderBy('sort')->orderBy('id')->get();
+        $rooms = Room::query()->with('beds')->orderBy('number')->get();
 
         foreach ($rooms as $room) {
             foreach ($room->beds as $bed) {

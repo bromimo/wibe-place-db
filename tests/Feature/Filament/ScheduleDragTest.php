@@ -34,15 +34,15 @@ class ScheduleDragTest extends TestCase
         $this->actingAs($admin, 'admin');
     }
 
-    /** Создаёт койку в комнате с ценой 460.
-     * @param string $name Название койки.
+    /** Создаёт первую койку в комнате с ценой 460.
+     * @param int $roomNumber Номер комнаты.
      * @return Bed
      */
-    private function makeBed(string $name = '1.1'): Bed
+    private function makeBed(int $roomNumber = 1): Bed
     {
-        $room = Room::factory()->create(['name' => 'Комната ' . $name, 'price' => 460]);
+        $room = Room::factory()->create(['number' => $roomNumber, 'price' => 460]);
 
-        return Bed::factory()->create(['room_id' => $room->id, 'name' => $name]);
+        return Bed::factory()->create(['room_id' => $room->id, 'number' => 1]);
     }
 
     /** Создаёт заселение на койке и перечитывает его из БД.
@@ -76,7 +76,7 @@ class ScheduleDragTest extends TestCase
     public function test_move_updates_bed_and_dates(): void
     {
         $bed = $this->makeBed();
-        $target = $this->makeBed('2.1');
+        $target = $this->makeBed(2);
         $stay = $this->makeStay($bed, '2026-11-24', '2026-11-27');
 
         Livewire::test(Schedule::class)
@@ -96,7 +96,7 @@ class ScheduleDragTest extends TestCase
     public function test_move_onto_occupied_notifies_and_keeps(): void
     {
         $bed = $this->makeBed();
-        $target = $this->makeBed('2.1');
+        $target = $this->makeBed(2);
         $stay = $this->makeStay($bed, '2026-11-24', '2026-11-27');
         $other = $this->makeStay($target, '2026-11-29', '2026-12-01');
 
@@ -145,7 +145,7 @@ class ScheduleDragTest extends TestCase
     public function test_checked_out_cannot_be_moved_or_resized(): void
     {
         $bed = $this->makeBed();
-        $target = $this->makeBed('2.1');
+        $target = $this->makeBed(2);
         $stay = $this->makeStay($bed, '2026-11-20', '2026-11-23', StayStatus::CheckedOut);
 
         Livewire::test(Schedule::class)

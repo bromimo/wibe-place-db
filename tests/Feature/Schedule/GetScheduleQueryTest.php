@@ -84,18 +84,18 @@ class GetScheduleQueryTest extends TestCase
         $this->assertNull($this->schedule('2027-01-01')['today_index']);
     }
 
-    /** Порядок комнат и коек по sort. */
+    /** Порядок комнат и коек по номеру. */
     public function test_ordering(): void
     {
-        $second = Room::factory()->create(['name' => 'B', 'sort' => 2]);
-        $first = Room::factory()->create(['name' => 'A', 'sort' => 1]);
-        Bed::factory()->create(['room_id' => $first->id, 'name' => 'a2', 'sort' => 2]);
-        Bed::factory()->create(['room_id' => $first->id, 'name' => 'a1', 'sort' => 1]);
+        $second = Room::factory()->create(['number' => 2, 'name' => 'B']);
+        $first = Room::factory()->create(['number' => 1, 'name' => 'A']);
+        Bed::factory()->create(['room_id' => $first->id, 'number' => 2]);
+        Bed::factory()->create(['room_id' => $first->id, 'number' => 1]);
 
         $data = $this->schedule();
 
         $this->assertSame(['A', 'B'], array_column($data['rooms'], 'name'));
-        $this->assertSame(['a1', 'a2'], array_column($data['rooms'][0]['beds'], 'name'));
+        $this->assertSame(['1.1.', '1.2.'], array_column($data['rooms'][0]['beds'], 'name'));
         $this->assertSame($second->id, $data['rooms'][1]['id']);
     }
 
@@ -280,7 +280,7 @@ class GetScheduleQueryTest extends TestCase
     public function test_query_count_is_constant(): void
     {
         foreach (range(1, 3) as $roomNumber) {
-            $room = Room::factory()->create(['sort' => $roomNumber]);
+            $room = Room::factory()->create(['number' => $roomNumber]);
 
             foreach (Bed::factory()->count(5)->create(['room_id' => $room->id]) as $bed) {
                 $this->makeStay('2026-11-24', '2026-11-26', StayStatus::Living, $bed);

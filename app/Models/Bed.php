@@ -12,8 +12,8 @@ class Bed extends AbstractModel
 {
     protected $fillable = [
         'room_id',
+        'number',
         'name',
-        'sort',
     ];
 
     /** Запрещает удаление койки с заселениями.
@@ -27,6 +27,16 @@ class Bed extends AbstractModel
                 throw new BedHasStaysException();
             }
         });
+    }
+
+    /** Название койки по номерам комнаты и койки: «3.1.».
+     * @param int $roomNumber Номер комнаты.
+     * @param int $bedNumber Номер койки в комнате.
+     * @return string
+     */
+    public static function nameFor(int $roomNumber, int $bedNumber): string
+    {
+        return "{$roomNumber}.{$bedNumber}.";
     }
 
     /** Комната койки.

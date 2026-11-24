@@ -10,12 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Room extends AbstractModel
 {
     protected $fillable = [
+        'number',
         'name',
         'price',
-        'sort',
     ];
 
-    /** Запрещает удаление комнаты с койками.
+    /** Запрещает прямое удаление комнаты с койками; удаление вместе с койками — DeleteRoomAction.
      * @throws RoomHasBedsException
      * @return void
      */
@@ -28,11 +28,20 @@ class Room extends AbstractModel
         });
     }
 
-    /** Койки комнаты по порядку.
+    /** Название комнаты по умолчанию: «N кімната».
+     * @param int|string|null $number Номер комнаты.
+     * @return string
+     */
+    public static function defaultName(int|string|null $number): string
+    {
+        return "{$number} кімната";
+    }
+
+    /** Койки комнаты по номеру.
      * @return HasMany<Bed, $this>
      */
     public function beds(): HasMany
     {
-        return $this->hasMany(Bed::class)->orderBy('sort')->orderBy('id');
+        return $this->hasMany(Bed::class)->orderBy('number');
     }
 }

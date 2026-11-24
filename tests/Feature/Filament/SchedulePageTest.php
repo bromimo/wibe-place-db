@@ -42,14 +42,14 @@ class SchedulePageTest extends TestCase
         $this->actingAs($admin, 'admin');
     }
 
-    /** Создаёт койку «1.1» в комнате «1 комната» с ценой 460.
+    /** Создаёт койку «1.1.» в комнате «1 кімната» с ценой 460.
      * @return Bed
      */
     private function makeBed(): Bed
     {
-        $room = Room::factory()->create(['name' => '1 комната', 'price' => 460]);
+        $room = Room::factory()->create(['number' => 1, 'name' => '1 кімната', 'price' => 460]);
 
-        return Bed::factory()->create(['room_id' => $room->id, 'name' => '1.1']);
+        return Bed::factory()->create(['room_id' => $room->id, 'number' => 1]);
     }
 
     /** Создаёт заселение на койке.
@@ -94,8 +94,8 @@ class SchedulePageTest extends TestCase
 
         $this->get(Schedule::getUrl())
             ->assertOk()
-            ->assertSee('1 комната')
-            ->assertSee('1.1')
+            ->assertSee('1 кімната')
+            ->assertSee('1.1.')
             ->assertSee('Марченко Максим')
             ->assertSee('1000')
             ->assertSee('380');

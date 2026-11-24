@@ -7,9 +7,10 @@ use Filament\Tables\Table;
 use Filament\Actions\EditAction;
 use Illuminate\Support\Collection;
 use Filament\Actions\BulkActionGroup;
+use App\Actions\Room\DeleteRoomAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Tables\Columns\TextColumn;
-use App\Exceptions\RoomHasBedsException;
+use App\Exceptions\BedHasStaysException;
 use Filament\Notifications\Notification;
 
 /** Таблица комнат. */
@@ -22,8 +23,11 @@ class RoomsTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->defaultSort('sort')
+            ->defaultSort('number')
             ->columns([
+                TextColumn::make('number')
+                    ->label('Номер')
+                    ->sortable(),
                 TextColumn::make('name')
                     ->label('Название')
                     ->searchable()
@@ -32,11 +36,8 @@ class RoomsTable
                     ->label('Цена за ночь')
                     ->sortable(),
                 TextColumn::make('beds_count')
-                    ->label('Коек')
+                    ->label('Число коек')
                     ->counts('beds')
-                    ->sortable(),
-                TextColumn::make('sort')
-                    ->label('Порядок')
                     ->sortable(),
             ])
             ->recordActions([
@@ -48,8 +49,8 @@ class RoomsTable
                         ->using(function (DeleteBulkAction $action, Collection $records): void {
                             $records->each(function (Room $record) use ($action): void {
                                 try {
-                                    $record->delete() || $action->reportBulkProcessingFailure();
-                                } catch (RoomHasBedsException $e) {
+                                    (new DeleteRoomAction())->run($record);
+                                } catch (BedHasStaysException $e) {
                                     $action->reportBulkProcessingFailure($e::class, $e->getMessage());
                                 }
                             });
