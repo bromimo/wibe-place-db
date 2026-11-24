@@ -255,7 +255,7 @@ class Schedule extends Page
                     if ($checkOut->clippedTo() !== null) {
                         Notification::make()
                             ->warning()
-                            ->title('Выезд ограничен датой заезда следующего гостя: ' . $checkOut->clippedTo()->format('d.m'))
+                            ->title('Выезд ограничен началом следующего заселения: ' . $checkOut->clippedTo()->format('d.m'))
                             ->send();
                     }
                 }),

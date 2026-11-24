@@ -737,7 +737,7 @@ class ScheduleStayActionsTest extends TestCase
 
         Livewire::test(Schedule::class)
             ->callAction($this->footerAction($overdue, 'checkOut'))
-            ->assertNotified('Выезд ограничен датой заезда следующего гостя: 20.11')
+            ->assertNotified('Выезд ограничен началом следующего заселения: 20.11')
             ->assertActionNotMounted('editStay');
 
         $overdue->refresh();
