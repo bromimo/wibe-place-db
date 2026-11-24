@@ -134,6 +134,15 @@
         .sch-stay-guest-name { font-size: 1.25rem; font-weight: 700; }
         .sch-stay-guest-phone { font-size: 1rem; color: #4b5563; }
 
+        .sch-stay-docs { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; }
+        .sch-stay-docs-label { font-size: .875rem; font-weight: 500; }
+        .sch-stay-docs-link { display: inline-block; max-width: 100%; }
+        .sch-stay-docs-image {
+            display: block; height: 140px; width: auto; max-width: 100%; object-fit: contain;
+            border: 1px solid #d1d5db; border-radius: .5rem;
+        }
+        .sch-stay-docs-none { font-size: .875rem; color: #6b7280; }
+
         .sch-stay-dates .fi-growable { flex: 1 1 0; min-width: 0; }
         .sch-stay-nights {
             display: flex; flex-direction: column; align-items: center; justify-content: center;

@@ -93,9 +93,9 @@ class GuestCard
                 ->placeholder('—'),
             ImageEntry::make('docs')
                 ->label('Документы')
-                ->state($user->docs)
+                ->state(GuestDocs::url($user->docs))
                 ->placeholder('нет')
-                ->url(fn (ImageEntry $component, ?string $state): ?string => filled($state) ? $component->getImageUrl($state) : null)
+                ->url(fn (?string $state): ?string => $state)
                 ->openUrlInNewTab(),
             Text::make('Заселений: ' . $user->stays()->count()),
         ];

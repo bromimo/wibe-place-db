@@ -393,6 +393,110 @@ class ScheduleStayActionsTest extends TestCase
             ->assertMountedActionModalDontSeeHtml('<img');
     }
 
+    /** Путь документов есть, а файла на диске нет: окно «Клиент» пишет «нет» вместо пустой картинки. */
+    public function test_client_card_shows_no_docs_for_missing_file(): void
+    {
+        Storage::fake(config('filament.default_filesystem_disk'));
+
+        $bed = $this->makeBed();
+        $guest = User::factory()->create(['docs' => 'docs/missing.png']);
+
+        $this->createStay($bed)
+            ->setActionData(['user_id' => $guest->id])
+            ->assertActionMounted($this->guestCard())
+            ->assertMountedActionModalSee(['Документы', 'нет'])
+            ->assertMountedActionModalDontSeeHtml(['<img', 'missing.png']);
+    }
+
+    /** Окно правки показывает фото документов гостя под строкой гостя; клик открывает его в новой вкладке. */
+    public function test_edit_shows_guest_documents(): void
+    {
+        Storage::fake(config('filament.default_filesystem_disk'));
+        Storage::disk(config('filament.default_filesystem_disk'))->put('docs/passport.png', 'png');
+
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+        $stay->user->update(['docs' => 'docs/passport.png']);
+
+        $this->editStay($stay)
+            ->assertMountedActionModalSee('Документы')
+            ->assertMountedActionModalDontSee('Документы: нет')
+            ->assertMountedActionModalSeeHtml([
+                'class="sch-stay-docs"',
+                'target="_blank"',
+                'rel="noopener"',
+                '<img class="sch-stay-docs-image" src="http://localhost/docs/passport.png?expiration=',
+            ]);
+    }
+
+    /** Блок документов стоит между строкой гостя и строкой дат. */
+    public function test_edit_documents_block_is_between_guest_and_dates(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+
+        $html = $this->editStay($stay)->getMountedActionModalHtml();
+
+        $guest = strpos($html, 'class="sch-stay-guest"');
+        $docs = strpos($html, 'class="sch-stay-docs');
+        $dates = strpos($html, 'sch-stay-dates');
+
+        $this->assertNotFalse($guest);
+        $this->assertNotFalse($docs);
+        $this->assertNotFalse($dates);
+        $this->assertTrue($guest < $docs && $docs < $dates);
+    }
+
+    /** Гость без документов: «Документы: нет» и никакой картинки. */
+    public function test_edit_shows_no_documents_when_empty(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+        $stay->user->update(['docs' => null]);
+
+        $this->editStay($stay)
+            ->assertMountedActionModalSee('Документы: нет')
+            ->assertMountedActionModalDontSeeHtml('sch-stay-docs-image');
+    }
+
+    /** Путь документов есть, а файла на диске нет: «Документы: нет» и никакой картинки. */
+    public function test_edit_shows_no_documents_for_missing_file(): void
+    {
+        Storage::fake(config('filament.default_filesystem_disk'));
+
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+        $stay->user->update(['docs' => 'docs/missing.png']);
+
+        $this->editStay($stay)
+            ->assertMountedActionModalSee('Документы: нет')
+            ->assertMountedActionModalDontSeeHtml(['sch-stay-docs-image', 'missing.png']);
+    }
+
+    /** После смены гостя в «Деталях заселения» и «Выбрать» блок показывает документы нового гостя. */
+    public function test_edit_documents_follow_chosen_guest(): void
+    {
+        Storage::fake(config('filament.default_filesystem_disk'));
+        Storage::disk(config('filament.default_filesystem_disk'))->put('docs/other.png', 'png');
+
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+        $stay->user->update(['docs' => null]);
+        $other = User::factory()->create(['docs' => 'docs/other.png']);
+
+        $component = $this->editStay($stay)
+            ->assertMountedActionModalSee('Документы: нет')
+            ->setActionData(['user_id' => $other->id])
+            ->callMountedAction();
+
+        $this->assertGuestCardClosed($component);
+
+        $component
+            ->assertMountedActionModalSee($other->full_name)
+            ->assertMountedActionModalDontSee('Документы: нет')
+            ->assertMountedActionModalSeeHtml('docs/other.png?expiration=');
+    }
+
     /** «Выбрать» оставляет гостя в поле, окно заселения остаётся открытым и сохраняется с ним. */
     public function test_choose_keeps_guest_and_stay_saves(): void
     {

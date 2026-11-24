@@ -70,6 +70,7 @@ class StayForm
     {
         return [
             Html::make(fn (Get $get): HtmlString => self::guestHtml($get('user_id')))->key('guestRow'),
+            Html::make(fn (Get $get): HtmlString => self::docsHtml($get('user_id')))->key('docsRow'),
             self::datesRow($stay),
             self::tariffRow($stay),
             Html::make(fn (Get $get): HtmlString => self::moneyHtml($get, $stay))->key('moneyRow'),
@@ -399,6 +400,26 @@ class StayForm
         return new HtmlString(
             '<div class="sch-stay-guest"><span class="sch-stay-guest-name">' . e($name) . '</span>'
             . '<span class="sch-stay-guest-phone">' . e($phone) . '</span></div>'
+        );
+    }
+
+    /** Блок «Документы»: превью фото документов гостя со ссылкой в новой вкладке или серое «Документы: нет».
+     * @param mixed $userId Id гостя из формы.
+     * @return HtmlString
+     */
+    private static function docsHtml(mixed $userId): HtmlString
+    {
+        $user = is_numeric($userId) ? User::query()->find((int) $userId) : null;
+        $url = GuestDocs::url($user?->docs);
+
+        if ($url === null) {
+            return new HtmlString('<div class="sch-stay-docs sch-stay-docs-none">Документы: нет</div>');
+        }
+
+        return new HtmlString(
+            '<div class="sch-stay-docs"><span class="sch-stay-docs-label">Документы</span>'
+            . '<a class="sch-stay-docs-link" href="' . e($url) . '" target="_blank" rel="noopener">'
+            . '<img class="sch-stay-docs-image" src="' . e($url) . '" alt="Документы"></a></div>'
         );
     }
 
