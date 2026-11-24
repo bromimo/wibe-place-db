@@ -140,7 +140,7 @@ class StayForm
         ];
     }
 
-    /** Поле гостя: поиск по фамилии, имени и телефону, создание нового клиента.
+    /** Поле гостя: поиск по фамилии, имени и телефону, создание нового клиента, окно «Клиент» при выборе из списка.
      * @return Select
      */
     private static function guestSelect(): Select
@@ -152,6 +152,9 @@ class StayForm
             ->exists(User::class, 'id')
             ->getSearchResultsUsing(fn (string $search): array => self::searchGuests($search))
             ->getOptionLabelUsing(fn ($value): ?string => User::query()->find($value)?->full_name)
+            ->live()
+            ->registerActions([GuestCard::action()])
+            ->afterStateUpdated(fn (Select $component, mixed $state, mixed $old) => GuestCard::open($component, $state, $old))
             ->createOptionModalHeading('Новый клиент')
             ->createOptionForm([
                 TextInput::make('last_name')

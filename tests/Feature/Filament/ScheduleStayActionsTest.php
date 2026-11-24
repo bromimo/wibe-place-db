@@ -15,6 +15,7 @@ use App\Enums\StayTariff;
 use App\Filament\Pages\Schedule;
 use App\Filament\Schemas\StayForm;
 use Filament\Forms\Components\Repeater;
+use Illuminate\Support\Facades\Storage;
 use Filament\Actions\Testing\TestAction;
 use Livewire\Features\SupportTesting\Testable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -143,6 +144,7 @@ class ScheduleStayActionsTest extends TestCase
         $component = Livewire::test(Schedule::class)
             ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
             ->setActionData(['user_id' => $guest->id, 'date_to' => '2026-11-27'])
+            ->callMountedAction() // «Выбрать» в окне «Клиент»
             ->callMountedAction()
             ->assertHasNoActionErrors()
             ->assertActionNotMounted('createStay');
@@ -168,6 +170,7 @@ class ScheduleStayActionsTest extends TestCase
         Livewire::test(Schedule::class)
             ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
             ->setActionData(['user_id' => $guest->id, 'tariff' => StayTariff::Manual->value])
+            ->callMountedAction() // «Выбрать» в окне «Клиент»
             ->callMountedAction()
             ->assertHasActionErrors(['manual_total' => 'required']);
 
@@ -183,6 +186,7 @@ class ScheduleStayActionsTest extends TestCase
         Livewire::test(Schedule::class)
             ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
             ->setActionData(['user_id' => $guest->id, 'tariff' => StayTariff::Manual->value, 'manual_total' => '0'])
+            ->callMountedAction() // «Выбрать» в окне «Клиент»
             ->callMountedAction()
             ->assertHasNoActionErrors()
             ->assertActionNotMounted('createStay');
@@ -203,6 +207,7 @@ class ScheduleStayActionsTest extends TestCase
         Livewire::test(Schedule::class)
             ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
             ->setActionData(['user_id' => $guest->id, 'date_from' => '0202-11-24', 'date_to' => '2101-01-01'])
+            ->callMountedAction() // «Выбрать» в окне «Клиент»
             ->callMountedAction()
             ->assertHasActionErrors(['date_from', 'date_to'])
             ->assertActionMounted('createStay');
@@ -266,6 +271,7 @@ class ScheduleStayActionsTest extends TestCase
         Livewire::test(Schedule::class)
             ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
             ->setActionData(['user_id' => $guest->id, 'notes' => 'Поздний заезд'])
+            ->callMountedAction() // «Выбрать» в окне «Клиент»
             ->callMountedAction()
             ->assertNotified("Койка занята: {$existing->user->full_name} с 23.11 по 26.11")
             ->assertActionMounted('createStay')
@@ -288,12 +294,198 @@ class ScheduleStayActionsTest extends TestCase
 
         $guest = User::query()->where('last_name', 'Петренко')->firstOrFail();
 
+        $this->assertGuestCardClosed($component);
+
         $component
             ->assertActionDataSet(['user_id' => $guest->id])
             ->callMountedAction()
             ->assertHasNoActionErrors();
 
         $this->assertSame($guest->id, Stay::query()->firstOrFail()->user_id);
+    }
+
+    /** Окно «Клиент» поверх окна заселения.
+     * @param string $parent Окно заселения: createStay или editStay.
+     * @return array<int, TestAction|string>
+     */
+    private function guestCard(string $parent = 'createStay'): array
+    {
+        return [$parent, TestAction::make('guestCard')->schemaComponent('user_id')];
+    }
+
+    /** Проверяет, что окно «Клиент» не открыто и открыто только окно заселения.
+     * @param Testable $component Страница графика.
+     * @return void
+     */
+    private function assertGuestCardClosed(Testable $component): void
+    {
+        $component->assertOk();
+
+        $this->assertCount(1, $component->instance()->mountedActions);
+    }
+
+    /** Открывает окно нового заселения на койке.
+     * @param Bed $bed Койка.
+     * @return Testable
+     */
+    private function createStay(Bed $bed): Testable
+    {
+        return Livewire::test(Schedule::class)->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24']);
+    }
+
+    /** Выбор гостя в списке открывает окно «Клиент» со всеми его данными и числом заселений. */
+    public function test_picking_guest_shows_client_card(): void
+    {
+        Storage::fake(config('filament.default_filesystem_disk'));
+        Storage::disk(config('filament.default_filesystem_disk'))->put('docs/passport.png', 'png');
+
+        $bed = $this->makeBed();
+        $guest = User::factory()->create([
+            'last_name' => 'Шевченко',
+            'first_name' => 'Тарас',
+            'phone' => '+380501112233',
+            'notes' => 'Шрам на левой руке',
+            'docs' => 'docs/passport.png',
+        ]);
+        Stay::factory()->count(2)->create(['user_id' => $guest->id]);
+
+        $component = $this->createStay($bed)
+            ->setActionData(['user_id' => $guest->id])
+            ->assertActionMounted($this->guestCard())
+            ->assertMountedActionModalSee([
+                'Клиент', 'Фамилия', 'Шевченко', 'Имя', 'Тарас', 'Телефон', '+380501112233',
+                'Особые приметы', 'Шрам на левой руке', 'Документы', 'Заселений: 2', 'Отменить', 'Выбрать',
+            ])
+            ->assertMountedActionModalSeeHtml(['passport.png', 'target="_blank"']);
+
+        $this->assertNull($component->get('mountedActions.0.data.user_id'));
+    }
+
+    /** Пустые телефон, приметы и документы показываются прочерком и «нет»; заселений 0. */
+    public function test_client_card_shows_placeholders_for_empty_fields(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create(['phone' => null, 'notes' => null, 'docs' => null]);
+
+        $this->createStay($bed)
+            ->setActionData(['user_id' => $guest->id])
+            ->assertActionMounted($this->guestCard())
+            ->assertMountedActionModalSee(['—', 'нет', 'Заселений: 0'])
+            ->assertMountedActionModalDontSeeHtml('<img');
+    }
+
+    /** «Выбрать» оставляет гостя в поле, окно заселения остаётся открытым и сохраняется с ним. */
+    public function test_choose_keeps_guest_and_stay_saves(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create();
+
+        $component = $this->createStay($bed)
+            ->setActionData(['notes' => 'Поздний заезд', 'user_id' => $guest->id])
+            ->callMountedAction();
+
+        $this->assertGuestCardClosed($component);
+
+        $component
+            ->assertActionMounted('createStay')
+            ->assertActionDataSet(['user_id' => $guest->id, 'notes' => 'Поздний заезд'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertActionNotMounted('createStay');
+
+        $this->assertSame($guest->id, Stay::query()->firstOrFail()->user_id);
+    }
+
+    /** «Отменить» на новом заселении: поле гостя снова пустое, остальное в форме не меняется. */
+    public function test_cancel_restores_empty_guest(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create();
+
+        $component = $this->createStay($bed)
+            ->setActionData(['notes' => 'Поздний заезд', 'date_to' => '2026-11-27'])
+            ->setActionData(['user_id' => $guest->id])
+            ->assertActionMounted($this->guestCard())
+            ->unmountAction();
+
+        $this->assertGuestCardClosed($component);
+
+        $component->assertActionDataSet([
+            'user_id' => null,
+            'bed_id' => $bed->id,
+            'notes' => 'Поздний заезд',
+            'date_from' => '2026-11-24',
+            'date_to' => '2026-11-27',
+        ]);
+
+        $this->assertSame(0, Stay::query()->count());
+    }
+
+    /** «Отменить» после смены гостя возвращает прежнего гостя. */
+    public function test_cancel_restores_previous_guest(): void
+    {
+        $bed = $this->makeBed();
+        $first = User::factory()->create();
+        $second = User::factory()->create();
+
+        $component = $this->createStay($bed)
+            ->setActionData(['user_id' => $first->id])
+            ->callMountedAction()
+            ->setActionData(['user_id' => $second->id])
+            ->assertActionMounted($this->guestCard())
+            ->assertMountedActionModalSee($second->last_name)
+            ->unmountAction();
+
+        $this->assertGuestCardClosed($component);
+
+        $component->assertActionDataSet(['user_id' => $first->id]);
+    }
+
+    /** Окно правки открывается без окна «Клиент»; смена гостя и «Отменить» возвращают гостя заселения. */
+    public function test_edit_opens_without_card_and_cancel_restores_stay_guest(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+        $other = User::factory()->create();
+
+        $component = $this->editStay($stay);
+
+        $this->assertGuestCardClosed($component);
+
+        $component
+            ->setActionData(['user_id' => $other->id])
+            ->assertActionMounted($this->guestCard('editStay'))
+            ->unmountAction();
+
+        $this->assertGuestCardClosed($component);
+
+        $component
+            ->assertActionDataSet(['user_id' => $stay->user_id])
+            ->callMountedAction()
+            ->assertHasNoActionErrors();
+
+        $this->assertSame($stay->user_id, $stay->refresh()->user_id);
+    }
+
+    /** Несуществующий id гостя: окно не открывается, поле возвращается к прежнему значению. */
+    public function test_forged_guest_id_does_not_open_card(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create();
+
+        $component = $this->createStay($bed)->setActionData(['user_id' => 999999]);
+
+        $this->assertGuestCardClosed($component);
+
+        $component
+            ->assertActionDataSet(['user_id' => null])
+            ->setActionData(['user_id' => $guest->id])
+            ->callMountedAction()
+            ->setActionData(['user_id' => 999999]);
+
+        $this->assertGuestCardClosed($component);
+
+        $component->assertActionDataSet(['user_id' => $guest->id]);
     }
 
     /** Окно правки заполнено данными заселения; смена выезда сохраняется. */
