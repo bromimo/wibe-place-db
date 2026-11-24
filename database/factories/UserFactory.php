@@ -5,16 +5,12 @@ namespace Database\Factories;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * Фабрика гостей.
- *
+/** Фабрика гостей.
  * @extends Factory<User>
  */
 class UserFactory extends Factory
 {
-    /**
-     * Состояние по умолчанию.
-     *
+    /** Состояние по умолчанию.
      * @return array<string, mixed>
      */
     public function definition(): array

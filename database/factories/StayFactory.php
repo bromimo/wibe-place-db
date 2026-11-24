@@ -2,23 +2,19 @@
 
 namespace Database\Factories;
 
-use App\Enums\StayStatus;
-use App\Enums\StayTariff;
 use App\Models\Bed;
 use App\Models\Stay;
 use App\Models\User;
+use App\Enums\StayStatus;
+use App\Enums\StayTariff;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * Фабрика заселений.
- *
+/** Фабрика заселений.
  * @extends Factory<Stay>
  */
 class StayFactory extends Factory
 {
-    /**
-     * Состояние по умолчанию.
-     *
+    /** Состояние по умолчанию.
      * @return array<string, mixed>
      */
     public function definition(): array

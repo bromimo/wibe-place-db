@@ -6,16 +6,12 @@ use App\Models\Bed;
 use App\Models\Room;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * Фабрика коек.
- *
+/** Фабрика коек.
  * @extends Factory<Bed>
  */
 class BedFactory extends Factory
 {
-    /**
-     * Состояние по умолчанию.
-     *
+    /** Состояние по умолчанию.
      * @return array<string, mixed>
      */
     public function definition(): array

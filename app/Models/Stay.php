@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
-use App\Abstracts\Models\AbstractModel;
 use App\Enums\StayStatus;
 use App\Enums\StayTariff;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Abstracts\Models\AbstractModel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** Заселение гостя на койку. */
 class Stay extends AbstractModel
@@ -23,9 +23,7 @@ class Stay extends AbstractModel
         'notes',
     ];
 
-    /**
-     * Приведение типов атрибутов.
-     *
+    /** Приведение типов атрибутов.
      * @return array<string, string>
      */
     protected function casts(): array
@@ -38,9 +36,7 @@ class Stay extends AbstractModel
         ];
     }
 
-    /**
-     * Койка заселения.
-     *
+    /** Койка заселения.
      * @return BelongsTo<Bed, $this>
      */
     public function bed(): BelongsTo
@@ -48,9 +44,7 @@ class Stay extends AbstractModel
         return $this->belongsTo(Bed::class);
     }
 
-    /**
-     * Гость.
-     *
+    /** Гость.
      * @return BelongsTo<User, $this>
      */
     public function user(): BelongsTo
@@ -58,9 +52,7 @@ class Stay extends AbstractModel
         return $this->belongsTo(User::class);
     }
 
-    /**
-     * Оплаты заселения.
-     *
+    /** Оплаты заселения.
      * @return HasMany<Payment, $this>
      */
     public function payments(): HasMany

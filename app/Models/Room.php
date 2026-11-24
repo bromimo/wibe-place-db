@@ -14,9 +14,7 @@ class Room extends AbstractModel
         'sort',
     ];
 
-    /**
-     * Койки комнаты по порядку.
-     *
+    /** Койки комнаты по порядку.
      * @return HasMany<Bed, $this>
      */
     public function beds(): HasMany

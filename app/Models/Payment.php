@@ -15,9 +15,7 @@ class Payment extends AbstractModel
         'note',
     ];
 
-    /**
-     * Приведение типов атрибутов.
-     *
+    /** Приведение типов атрибутов.
      * @return array<string, string>
      */
     protected function casts(): array
@@ -27,9 +25,7 @@ class Payment extends AbstractModel
         ];
     }
 
-    /**
-     * Заселение, за которое внесена оплата.
-     *
+    /** Заселение, за которое внесена оплата.
      * @return BelongsTo<Stay, $this>
      */
     public function stay(): BelongsTo

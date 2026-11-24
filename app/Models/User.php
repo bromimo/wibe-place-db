@@ -2,12 +2,12 @@
 
 namespace App\Models;
 
-use App\Abstracts\Models\AbstractModel;
 use App\Observers\UserObserver;
-use Illuminate\Database\Eloquent\Attributes\ObservedBy;
+use App\Abstracts\Models\AbstractModel;
+use Illuminate\Notifications\Notifiable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 
 #[ObservedBy(UserObserver::class)]
 class User extends AbstractModel
@@ -16,7 +16,6 @@ class User extends AbstractModel
 
     /**
      * The attributes that are mass assignable.
-     *
      * @var array<int, string>
      */
     protected $fillable = [
@@ -27,9 +26,7 @@ class User extends AbstractModel
         'docs',
     ];
 
-    /**
-     * Заселения гостя.
-     *
+    /** Заселения гостя.
      * @return HasMany<Stay, $this>
      */
     public function stays(): HasMany
@@ -37,9 +34,7 @@ class User extends AbstractModel
         return $this->hasMany(Stay::class);
     }
 
-    /**
-     * Полное имя: фамилия и имя.
-     *
+    /** Полное имя: фамилия и имя.
      * @return Attribute<string, never>
      */
     protected function fullName(): Attribute

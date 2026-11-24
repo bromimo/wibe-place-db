@@ -8,8 +8,8 @@ enum StayTariff: string
     case Standard = 'standard';
     case Manual = 'manual';
 
-    /**
-     * Русское название тарифа.
+    /** Русское название тарифа.
+     * @return string
      */
     public function label(): string
     {
@@ -19,9 +19,7 @@ enum StayTariff: string
         };
     }
 
-    /**
-     * Список тарифов для выпадающих списков.
-     *
+    /** Список тарифов для выпадающих списков.
      * @return array<string, string>
      */
     public static function options(): array

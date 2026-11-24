@@ -2,20 +2,16 @@
 
 namespace Database\Factories;
 
-use App\Models\Payment;
 use App\Models\Stay;
+use App\Models\Payment;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
-/**
- * Фабрика оплат.
- *
+/** Фабрика оплат.
  * @extends Factory<Payment>
  */
 class PaymentFactory extends Factory
 {
-    /**
-     * Состояние по умолчанию.
-     *
+    /** Состояние по умолчанию.
      * @return array<string, mixed>
      */
     public function definition(): array

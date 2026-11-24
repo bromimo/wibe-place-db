@@ -3,8 +3,8 @@
 namespace App\Models;
 
 use App\Abstracts\Models\AbstractModel;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** Койка в комнате. */
 class Bed extends AbstractModel
@@ -15,9 +15,7 @@ class Bed extends AbstractModel
         'sort',
     ];
 
-    /**
-     * Комната койки.
-     *
+    /** Комната койки.
      * @return BelongsTo<Room, $this>
      */
     public function room(): BelongsTo
@@ -25,9 +23,7 @@ class Bed extends AbstractModel
         return $this->belongsTo(Room::class);
     }
 
-    /**
-     * Заселения на койке.
-     *
+    /** Заселения на койке.
      * @return HasMany<Stay, $this>
      */
     public function stays(): HasMany
