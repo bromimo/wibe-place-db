@@ -109,7 +109,7 @@ class Stay extends AbstractModel
      */
     public function isOverdue(): bool
     {
-        return $this->status === StayStatus::Living && $this->date_to->lt(today());
+        return $this->effectiveDateTo()->gt($this->date_to);
     }
 
     /** Фактическая дата выезда: для просроченного заселения завтрашний день.
@@ -117,6 +117,20 @@ class Stay extends AbstractModel
      */
     public function effectiveDateTo(): CarbonImmutable
     {
-        return $this->isOverdue() ? today()->addDay()->toImmutable() : $this->date_to;
+        return self::effectiveEnd($this->status, $this->date_to);
+    }
+
+    /** Фактический конец интервала заселения: у проживающего с прошедшей датой выезда — завтрашний день.
+     * @param StayStatus $status Состояние заселения.
+     * @param CarbonImmutable $dateTo Сохранённая или сохраняемая дата выезда.
+     * @return CarbonImmutable
+     */
+    public static function effectiveEnd(StayStatus $status, CarbonImmutable $dateTo): CarbonImmutable
+    {
+        if ($status === StayStatus::Living && $dateTo->lt(today())) {
+            return today()->addDay()->toImmutable();
+        }
+
+        return $dateTo;
     }
 }

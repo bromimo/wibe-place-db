@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use BackedEnum;
 use App\Models\Bed;
 use App\Models\Stay;
+use DomainException;
 use DateTimeImmutable;
 use Filament\Pages\Page;
 use App\Dto\Stay\StayDto;
@@ -19,17 +20,15 @@ use App\Filament\Schemas\StayForm;
 use Illuminate\Support\Facades\DB;
 use App\Actions\Stay\MoveStayAction;
 use Filament\Support\Icons\Heroicon;
+use Filament\Support\Exceptions\Halt;
 use App\Actions\Stay\CreateStayAction;
 use App\Actions\Stay\DeleteStayAction;
 use App\Actions\Stay\ResizeStayAction;
 use App\Actions\Stay\UpdateStayAction;
 use App\Actions\Stay\CheckInStayAction;
-use App\Exceptions\StayLockedException;
 use App\Actions\Stay\CheckOutStayAction;
-use App\Exceptions\StayOverlapException;
 use Filament\Notifications\Notification;
 use App\Actions\Stay\SyncStayPaymentsAction;
-use App\Exceptions\InvalidStayDataException;
 use App\Http\Queries\Schedule\GetScheduleQuery;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -155,7 +154,7 @@ class Schedule extends Page
             ->action(function (Action $action, array $data): void {
                 try {
                     (new CreateStayAction())->run($this->toDto($data));
-                } catch (StayOverlapException|InvalidStayDataException $e) {
+                } catch (DomainException $e) {
                     Notification::make()->danger()->title($e->getMessage())->send();
 
                     $action->halt();
@@ -200,12 +199,12 @@ class Schedule extends Page
                         (new UpdateStayAction())->run($stay, $this->toDto($data));
                         (new SyncStayPaymentsAction())->run($stay, $this->paymentRows($data));
                     });
-                } catch (StayOverlapException|InvalidStayDataException $e) {
-                    $stay->refresh();
-
+                } catch (DomainException $e) {
                     Notification::make()->danger()->title($e->getMessage())->send();
 
                     $action->halt();
+                } catch (ModelNotFoundException) {
+                    $this->notifyStayMissing();
                 }
 
                 $this->refreshSchedule();
@@ -225,10 +224,8 @@ class Schedule extends Page
                 ->color('success')
                 ->visible($stay?->status === StayStatus::Booked)
                 ->cancelParentActions()
-                ->action(function () use ($stay): void {
-                    (new CheckInStayAction())->run($stay);
-
-                    $this->refreshSchedule();
+                ->action(function (Action $action) use ($stay): void {
+                    $this->applyFooterChange($action, fn () => (new CheckInStayAction())->run($stay));
                 }),
             Action::make('checkOut')
                 ->label('Выселить')
@@ -237,10 +234,17 @@ class Schedule extends Page
                 ->requiresConfirmation()
                 ->modalHeading('Выселить гостя?')
                 ->cancelParentActions()
-                ->action(function () use ($stay): void {
-                    (new CheckOutStayAction())->run($stay);
+                ->action(function (Action $action) use ($stay): void {
+                    $checkOut = new CheckOutStayAction();
 
-                    $this->refreshSchedule();
+                    $this->applyFooterChange($action, fn () => $checkOut->run($stay));
+
+                    if ($checkOut->clippedTo() !== null) {
+                        Notification::make()
+                            ->warning()
+                            ->title('Выезд ограничен датой заезда следующего гостя: ' . $checkOut->clippedTo()->format('d.m'))
+                            ->send();
+                    }
                 }),
             Action::make('delete')
                 ->label('Удалить')
@@ -250,12 +254,35 @@ class Schedule extends Page
                 ->modalHeading('Удалить заселение?')
                 ->modalDescription('Заселение и его оплаты будут удалены')
                 ->cancelParentActions()
-                ->action(function () use ($stay): void {
-                    (new DeleteStayAction())->run($stay);
-
-                    $this->refreshSchedule();
+                ->action(function (Action $action) use ($stay): void {
+                    $this->applyFooterChange($action, fn () => (new DeleteStayAction())->run($stay));
                 }),
         ];
+    }
+
+    /** Выполняет действие подвала окна правки. Ошибка предметной области: уведомление, закрывается только
+     * само действие, окно правки остаётся открытым. Пропавшее заселение: уведомление, окна закрываются.
+     * @param Action $action Действие подвала.
+     * @param callable(): mixed $change Вызов действия над заселением.
+     * @throws Halt
+     * @return void
+     */
+    private function applyFooterChange(Action $action, callable $change): void
+    {
+        try {
+            $change();
+        } catch (DomainException $e) {
+            Notification::make()->danger()->title($e->getMessage())->send();
+
+            $this->refreshSchedule();
+            $this->unmountAction(canCancelParentActions: false);
+
+            $action->halt();
+        } catch (ModelNotFoundException) {
+            $this->notifyStayMissing();
+        }
+
+        $this->refreshSchedule();
     }
 
     /** Значения новой формы по клетке: койка, заезд, выезд на следующий день, состояние по дате.
@@ -353,7 +380,7 @@ class Schedule extends Page
     {
         try {
             $change();
-        } catch (StayOverlapException|StayLockedException|InvalidStayDataException $e) {
+        } catch (DomainException $e) {
             Notification::make()->danger()->title($e->getMessage())->send();
         } catch (ModelNotFoundException) {
             $this->notifyDragFailed();

@@ -2,46 +2,52 @@
 
 namespace App\Actions\Stay;
 
+use App\Models\Bed;
 use App\Models\Stay;
 use App\Dto\Stay\StayDto;
 use App\Enums\StayStatus;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use App\Exceptions\StayLockedException;
+use App\Exceptions\StayChangedException;
 use App\Exceptions\StayOverlapException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /** Перенос заселения на другую койку и дату с сохранением длительности. */
 class MoveStayAction
 {
-    /** Переносит заселение; цену определяет UpdateStayAction (смена комнаты берёт цену новой).
-     * @param Stay $stay Переносимое заселение.
+    /** Переносит заселение; состояние и длительность берутся из записи, перечитанной под блокировкой.
+     * Цену определяет UpdateStayAction (смена комнаты берёт цену новой).
+     * @param Stay $stay Переносимое заселение (может быть устаревшей копией).
      * @param int $bedId Целевая койка.
      * @param CarbonInterface $dateFrom Новый день заезда.
      * @throws StayLockedException
      * @throws StayOverlapException
+     * @throws StayChangedException
      * @throws ModelNotFoundException
      * @return Stay
      */
     public function run(Stay $stay, int $bedId, CarbonInterface $dateFrom): Stay
     {
-        if ($stay->status === StayStatus::CheckedOut) {
-            throw new StayLockedException();
-        }
-
         $from = CarbonImmutable::parse($dateFrom->toDateString());
 
-        $dto = new StayDto(
-            bed_id: $bedId,
-            user_id: $stay->user_id,
-            date_from: $from,
-            date_to: $from->addDays($stay->nights()),
-            status: $stay->status,
-            tariff: $stay->tariff,
-            manual_total: $stay->manual_total,
-            notes: $stay->notes,
-        );
+        return (new GuardStayChangeAction())->run($stay, $bedId, function (Bed $bed, Stay $fresh) use ($from): Stay {
+            if ($fresh->status === StayStatus::CheckedOut) {
+                throw new StayLockedException();
+            }
 
-        return (new UpdateStayAction())->run($stay, $dto);
+            $dto = new StayDto(
+                bed_id: $bed->id,
+                user_id: $fresh->user_id,
+                date_from: $from,
+                date_to: $from->addDays($fresh->nights()),
+                status: $fresh->status,
+                tariff: $fresh->tariff,
+                manual_total: $fresh->manual_total,
+                notes: $fresh->notes,
+            );
+
+            return (new UpdateStayAction())->apply($bed, $fresh, $dto);
+        });
     }
 }

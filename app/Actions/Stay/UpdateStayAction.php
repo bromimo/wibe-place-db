@@ -5,40 +5,53 @@ namespace App\Actions\Stay;
 use App\Models\Bed;
 use App\Models\Stay;
 use App\Dto\Stay\StayDto;
-use Illuminate\Support\Facades\DB;
+use App\Exceptions\StayChangedException;
 use App\Exceptions\StayOverlapException;
 use App\Exceptions\InvalidStayDataException;
-use App\Http\Queries\Stay\FindOverlappingStayQuery;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /** Правка заселения. */
 class UpdateStayAction
 {
     /** Обновляет заселение; цену за ночь пересчитывает при смене комнаты или с ручного тарифа.
-     * @param Stay $stay Правимое заселение.
+     * @param Stay $stay Правимое заселение (может быть устаревшей копией).
      * @param StayDto $dto Новые данные.
      * @throws InvalidStayDataException
      * @throws StayOverlapException
+     * @throws StayChangedException
+     * @throws ModelNotFoundException
      * @return Stay
      */
     public function run(Stay $stay, StayDto $dto): Stay
     {
         $dto->assertValid();
 
-        return DB::transaction(function () use ($stay, $dto): Stay {
-            $bed = Bed::query()->lockForUpdate()->findOrFail($dto->bed_id);
+        return (new GuardStayChangeAction())->run(
+            $stay,
+            $dto->bed_id,
+            fn (Bed $bed, Stay $fresh): Stay => $this->apply($bed, $fresh, $dto),
+        );
+    }
 
-            $conflict = (new FindOverlappingStayQuery())($bed->id, $dto->date_from, $dto->date_to, $stay->id);
+    /** Записывает новые данные в свежее заселение; вызывается только внутри GuardStayChangeAction.
+     * @param Bed $bed Заблокированная целевая койка.
+     * @param Stay $fresh Заселение, перечитанное под блокировкой.
+     * @param StayDto $dto Новые данные.
+     * @throws InvalidStayDataException
+     * @throws StayOverlapException
+     * @return Stay
+     */
+    public function apply(Bed $bed, Stay $fresh, StayDto $dto): Stay
+    {
+        $dto->assertValid();
 
-            if ($conflict !== null) {
-                throw new StayOverlapException($conflict);
-            }
+        (new GuardStayChangeAction())->assertBedFree($bed, $dto->date_from, $dto->date_to, $dto->status, $fresh->id);
 
-            $price = (new ResolveStayPriceAction())->run($dto->tariff, $bed, $stay, $dto->manual_total);
-            $attributes = array_merge($dto->toUpdateArray(), $price);
+        $price = (new ResolveStayPriceAction())->run($dto->tariff, $bed, $fresh, $dto->manual_total);
+        $attributes = array_merge($dto->toUpdateArray(), $price);
 
-            $stay->update($attributes);
+        $fresh->update($attributes);
 
-            return $stay->refresh();
-        });
+        return $fresh->refresh();
     }
 }

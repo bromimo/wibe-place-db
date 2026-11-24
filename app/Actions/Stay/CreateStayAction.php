@@ -5,15 +5,13 @@ namespace App\Actions\Stay;
 use App\Models\Bed;
 use App\Models\Stay;
 use App\Dto\Stay\StayDto;
-use Illuminate\Support\Facades\DB;
 use App\Exceptions\StayOverlapException;
 use App\Exceptions\InvalidStayDataException;
-use App\Http\Queries\Stay\FindOverlappingStayQuery;
 
 /** Создание заселения. */
 class CreateStayAction
 {
-    /** Создаёт заселение, фиксируя цену за ночь.
+    /** Создаёт заселение, фиксируя цену за ночь; проверяет фактический интервал на койке.
      * @param StayDto $dto Данные заселения.
      * @throws InvalidStayDataException
      * @throws StayOverlapException
@@ -23,14 +21,10 @@ class CreateStayAction
     {
         $dto->assertValid();
 
-        return DB::transaction(function () use ($dto): Stay {
-            $bed = Bed::query()->lockForUpdate()->findOrFail($dto->bed_id);
+        $guard = new GuardStayChangeAction();
 
-            $conflict = (new FindOverlappingStayQuery())($bed->id, $dto->date_from, $dto->date_to);
-
-            if ($conflict !== null) {
-                throw new StayOverlapException($conflict);
-            }
+        return $guard->run(null, $dto->bed_id, function (Bed $bed) use ($guard, $dto): Stay {
+            $guard->assertBedFree($bed, $dto->date_from, $dto->date_to, $dto->status);
 
             $price = (new ResolveStayPriceAction())->run($dto->tariff, $bed, null, $dto->manual_total);
             $attributes = array_merge($dto->toCreateArray(), $price);

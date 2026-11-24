@@ -363,6 +363,55 @@ class ScheduleStayActionsTest extends TestCase
             ->assertActionHidden($this->footerAction($booked, 'checkOut'));
     }
 
+    /** «Заселить» при конфликте: уведомление с причиной, окно правки открыто, бронь не меняется. */
+    public function test_check_in_conflict_notifies_and_keeps_modal(): void
+    {
+        $bed = $this->makeBed();
+        $booked = $this->makeStay($bed, '2026-11-10', '2026-11-15', StayStatus::Booked);
+        $next = $this->makeStay($bed, '2026-11-20', '2026-11-26');
+
+        Livewire::test(Schedule::class)
+            ->callAction($this->footerAction($booked, 'checkIn'))
+            ->assertNotified("Койка занята: {$next->user->full_name} с 20.11 по 26.11")
+            ->assertActionMounted('editStay');
+
+        $this->assertSame(StayStatus::Booked, $booked->refresh()->status);
+    }
+
+    /** Правка выселившегося в «проживает» задним числом: продление по сегодня задевает соседа — отказ. */
+    public function test_edit_checked_out_to_living_conflict_rejected(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-10', '2026-11-15', StayStatus::CheckedOut);
+        $next = $this->makeStay($bed, '2026-11-20', '2026-11-26');
+
+        $this->editStay($stay)
+            ->setActionData(['status' => StayStatus::Living->value])
+            ->callMountedAction()
+            ->assertNotified("Койка занята: {$next->user->full_name} с 20.11 по 26.11")
+            ->assertActionMounted('editStay');
+
+        $this->assertSame(StayStatus::CheckedOut, $stay->refresh()->status);
+    }
+
+    /** «Выселить» просроченного при следующем госте: выезд обрезан, показано предупреждение. */
+    public function test_check_out_clipped_warns(): void
+    {
+        $bed = $this->makeBed();
+        $overdue = $this->makeStay($bed, '2026-11-10', '2026-11-15');
+        $this->makeStay($bed, '2026-11-20', '2026-11-26', StayStatus::Booked);
+
+        Livewire::test(Schedule::class)
+            ->callAction($this->footerAction($overdue, 'checkOut'))
+            ->assertNotified('Выезд ограничен датой заезда следующего гостя: 20.11')
+            ->assertActionNotMounted('editStay');
+
+        $overdue->refresh();
+
+        $this->assertSame(StayStatus::CheckedOut, $overdue->status);
+        $this->assertSame('2026-11-20', $overdue->date_to->toDateString());
+    }
+
     /** «Удалить» убирает заселение вместе с оплатами. */
     public function test_delete_button(): void
     {
