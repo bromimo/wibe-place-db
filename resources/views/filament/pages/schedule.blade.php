@@ -58,8 +58,14 @@
         .sch-day.sch-today { font-weight: 700; color: #dc2626; }
 
         .sch-room-row .sch-label { font-weight: 600; background: #f3f4f6; }
-        .sch-room-row .sch-cell { display: flex; align-items: center; justify-content: center; background: #f3f4f6; color: #374151; }
-        .sch-room-row .sch-cell.sch-full { color: #b91c1c; }
+        /* Ячейка комнаты: сверху число свободных коек, снизу цена за ночь. */
+        .sch-room-row .sch-cell {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #f3f4f6; color: #374151; line-height: 1.15;
+        }
+        .sch-room-row .sch-free { font-size: .875rem; font-weight: 700; }
+        .sch-room-row .sch-price { font-size: .75rem; color: #6b7280; white-space: nowrap; }
+        .sch-room-row .sch-cell.sch-full .sch-free { color: #b91c1c; }
         .sch-toggle { flex: none; width: 1.25rem; color: #6b7280; cursor: pointer; background: none; border: 0; padding: 0; }
         .sch-bed-row .sch-label { padding-left: 2.125rem; }
         .sch-empty { display: flex; align-items: center; padding: 0 .75rem; color: #9ca3af; border-bottom: 1px solid #e5e7eb; flex: 1; }
@@ -199,7 +205,10 @@
                                 <span class="sch-name">{{ $room['name'] }}</span>
                             </div>
                             @foreach ($room['free'] as $free)
-                                <div @class(['sch-cell', 'sch-full' => $free <= 0])>{{ $free }} · {{ $room['price'] }}</div>
+                                <div @class(['sch-cell', 'sch-full' => $free <= 0])>
+                                    <span class="sch-free">{{ $free }}</span>
+                                    <span class="sch-price">₴ {{ $room['price'] }}</span>
+                                </div>
                             @endforeach
                         </div>
 
