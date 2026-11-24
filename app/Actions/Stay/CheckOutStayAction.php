@@ -16,8 +16,9 @@ class CheckOutStayAction
     private ?CarbonImmutable $clippedTo = null;
 
     /** Переводит проживание в выселение; дата выезда: сегодня, но не раньше следующего дня после заезда.
-     * Если на койке позже заезда этого гостя начинается другое заселение раньше такой даты, выезд
-     * ограничивается днём заезда ближайшего из них (см. clippedTo()). Из других состояний ничего не меняет.
+     * Если позже заезда этого гостя раньше такой даты начинается другое заселение на этой койке или другое
+     * заселение этого же гостя на любой койке, выезд ограничивается днём заезда ближайшего из них
+     * (см. clippedTo()). Из других состояний ничего не меняет. Гость блокируется после койки и заселения.
      * @param Stay $stay Заселение (может быть устаревшей копией).
      * @throws StayChangedException
      * @throws ModelNotFoundException
@@ -27,10 +28,14 @@ class CheckOutStayAction
     {
         $this->clippedTo = null;
 
-        return (new GuardStayChangeAction())->run($stay, null, function (Bed $bed, Stay $fresh): Stay {
+        $guard = new GuardStayChangeAction();
+
+        return $guard->run($stay, null, function (Bed $bed, Stay $fresh) use ($guard): Stay {
             if ($fresh->status !== StayStatus::Living) {
                 return $fresh;
             }
+
+            $guard->lockGuest($fresh->user_id);
 
             $minimum = $fresh->date_from->addDay();
             $dateTo = today()->gt($minimum) ? today()->toImmutable() : $minimum;
@@ -58,7 +63,8 @@ class CheckOutStayAction
         return $this->clippedTo;
     }
 
-    /** Самый ранний заезд другого заселения на койке строго между заездом гостя и целевой датой выезда.
+    /** Самый ранний заезд другого заселения на этой койке или этого же гостя на любой койке
+     * строго между заездом гостя и целевой датой выезда.
      * @param Bed $bed Заблокированная койка.
      * @param Stay $stay Выселяемое заселение.
      * @param CarbonImmutable $dateTo Целевая дата выезда.
@@ -67,7 +73,7 @@ class CheckOutStayAction
     private function nextStayStart(Bed $bed, Stay $stay, CarbonImmutable $dateTo): ?CarbonImmutable
     {
         $next = Stay::query()
-            ->where('bed_id', $bed->id)
+            ->where(fn ($query) => $query->where('bed_id', $bed->id)->orWhere('user_id', $stay->user_id))
             ->where('id', '!=', $stay->id)
             ->whereDate('date_from', '>', $stay->date_from->toDateString())
             ->whereDate('date_from', '<', $dateTo->toDateString())

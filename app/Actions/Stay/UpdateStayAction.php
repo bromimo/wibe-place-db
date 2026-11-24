@@ -7,6 +7,7 @@ use App\Models\Stay;
 use App\Dto\Stay\StayDto;
 use App\Exceptions\StayChangedException;
 use App\Exceptions\StayOverlapException;
+use App\Exceptions\GuestOverlapException;
 use App\Exceptions\InvalidStayDataException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -18,6 +19,7 @@ class UpdateStayAction
      * @param StayDto $dto Новые данные.
      * @throws InvalidStayDataException
      * @throws StayOverlapException
+     * @throws GuestOverlapException
      * @throws StayChangedException
      * @throws ModelNotFoundException
      * @return Stay
@@ -39,6 +41,7 @@ class UpdateStayAction
      * @param StayDto $dto Новые данные.
      * @throws InvalidStayDataException
      * @throws StayOverlapException
+     * @throws GuestOverlapException
      * @return Stay
      */
     public function apply(Bed $bed, Stay $fresh, StayDto $dto): Stay
@@ -46,7 +49,7 @@ class UpdateStayAction
         $dto->assertValid();
 
         if (! $this->keepsOccupancy($bed, $fresh, $dto)) {
-            (new GuardStayChangeAction())->assertBedFree($bed, $dto->date_from, $dto->date_to, $dto->status, $fresh->id);
+            (new GuardStayChangeAction())->assertFree($bed, $dto->user_id, $dto->date_from, $dto->date_to, $dto->status, $fresh->id);
         }
 
         $price = (new ResolveStayPriceAction())->run($dto->tariff, $bed, $fresh, $dto->manual_total);
@@ -57,9 +60,9 @@ class UpdateStayAction
         return $fresh->refresh();
     }
 
-    /** Правка не меняет занимаемое: та же койка, те же даты и то же состояние, что у свежей записи.
-     * Тогда пересечение не проверяется, чтобы в возникшем со временем пересечении (просрочка на чужую бронь)
-     * можно было сохранить примечание, тариф и оплаты.
+    /** Правка не меняет занимаемое: та же койка, те же даты, то же состояние и тот же гость, что у свежей записи.
+     * Тогда пересечения (по койке и по гостю) не проверяются, чтобы в возникшем со временем пересечении
+     * (просрочка на чужую бронь) или в старых данных с нарушением можно было сохранить примечание, тариф и оплаты.
      * @param Bed $bed Заблокированная целевая койка.
      * @param Stay $fresh Заселение, перечитанное под блокировкой.
      * @param StayDto $dto Новые данные.
@@ -68,6 +71,7 @@ class UpdateStayAction
     private function keepsOccupancy(Bed $bed, Stay $fresh, StayDto $dto): bool
     {
         return $bed->id === $fresh->bed_id
+            && $dto->user_id === $fresh->user_id
             && $dto->status === $fresh->status
             && $dto->date_from->toDateString() === $fresh->date_from->toDateString()
             && $dto->date_to->toDateString() === $fresh->date_to->toDateString();

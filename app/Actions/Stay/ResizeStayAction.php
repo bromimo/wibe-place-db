@@ -11,6 +11,7 @@ use Carbon\CarbonInterface;
 use App\Exceptions\StayLockedException;
 use App\Exceptions\StayChangedException;
 use App\Exceptions\StayOverlapException;
+use App\Exceptions\GuestOverlapException;
 use App\Exceptions\InvalidStayDataException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -22,6 +23,7 @@ class ResizeStayAction
      * @param CarbonInterface $dateTo Новый день выезда.
      * @throws StayLockedException
      * @throws StayOverlapException
+     * @throws GuestOverlapException
      * @throws InvalidStayDataException
      * @throws StayChangedException
      * @throws ModelNotFoundException

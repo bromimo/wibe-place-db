@@ -37,10 +37,15 @@ class DemoSeeder extends Seeder
         ['Мельник', 'Оксана'],
         ['Поліщук', 'Дмитро'],
         ['Лисенко', 'Ірина'],
+        ['Савченко', 'Тарас'],
+        ['Руденко', 'Юлія'],
+        ['Мороз', 'Богдан'],
+        ['Гнатюк', 'Світлана'],
+        ['Ковальчук', 'Роман'],
         ['Костянтинопольський-Задніпровський', 'Олександр'],
     ];
 
-    /** Создаёт демо-данные.
+    /** Создаёт демо-данные; у одного гостя заселения не пересекаются (правило «одна койка на гостя»).
      * @return void
      */
     public function run(): void
@@ -66,20 +71,20 @@ class DemoSeeder extends Seeder
 
         // Брони на будущие дни; одна — на одну ночь у гостя с длинным именем.
         $this->stay($beds['1.5'], $guests[3], 1, 4, StayStatus::Booked);
-        $this->stay($beds['1.1'], $guests[11], 3, 4, StayStatus::Booked);
+        $this->stay($beds['1.1'], $guests[16], 3, 4, StayStatus::Booked);
         $this->stay($beds['3.3'], $guests[10], 2, 6, StayStatus::Booked, payments: [500]);
         $this->stay($beds['3.5'], $guests[3], 10, 14, StayStatus::Booked);
 
         // Просроченное: проживает, выезд был два дня назад; койка занята по сегодня.
         $this->stay($beds['1.4'], $guests[0], -6, -2, StayStatus::Living, payments: [1840]);
-        $this->stay($beds['1.4'], $guests[10], 3, 7, StayStatus::Booked);
+        $this->stay($beds['1.4'], $guests[14], 3, 7, StayStatus::Booked);
 
         // Длинное, на 40 дней — выходит за окно графика.
-        $this->stay($beds['3.1'], $guests[11], -5, 35, StayStatus::Living, payments: [5000]);
+        $this->stay($beds['3.1'], $guests[15], -5, 35, StayStatus::Living, payments: [5000]);
 
         // Встык на одной койке: один выезжает сегодня, другой сегодня заезжает.
-        $this->stay($beds['1.2'], $guests[0], -2, 0, StayStatus::Living, payments: [920]);
-        $this->stay($beds['1.2'], $guests[2], 0, 3, StayStatus::Booked, payments: [460]);
+        $this->stay($beds['1.2'], $guests[12], -2, 0, StayStatus::Living, payments: [920]);
+        $this->stay($beds['1.2'], $guests[13], 0, 3, StayStatus::Booked, payments: [460]);
     }
 
     /** Создаёт через действие комнаты «N кімната» с койками «{номер комнаты}.{номер}.».

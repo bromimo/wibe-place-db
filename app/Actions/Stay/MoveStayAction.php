@@ -11,6 +11,7 @@ use Carbon\CarbonInterface;
 use App\Exceptions\StayLockedException;
 use App\Exceptions\StayChangedException;
 use App\Exceptions\StayOverlapException;
+use App\Exceptions\GuestOverlapException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /** Перенос заселения на другую койку и дату с сохранением длительности. */
@@ -23,6 +24,7 @@ class MoveStayAction
      * @param CarbonInterface $dateFrom Новый день заезда.
      * @throws StayLockedException
      * @throws StayOverlapException
+     * @throws GuestOverlapException
      * @throws StayChangedException
      * @throws ModelNotFoundException
      * @return Stay

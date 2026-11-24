@@ -108,6 +108,23 @@ class ScheduleDragTest extends TestCase
         $this->assertUnchanged($stay);
     }
 
+    /** Перенос в даты другого заселения того же гостя: уведомление с койкой, запись прежняя. */
+    public function test_move_into_guests_other_stay_notifies_and_keeps(): void
+    {
+        $bed = $this->makeBed();
+        $target = $this->makeBed(2);
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-27');
+        $own = $this->makeStay($this->makeBed(3), '2026-11-29', '2026-12-01');
+        $own->update(['user_id' => $stay->user_id]);
+
+        Livewire::test(Schedule::class)
+            ->call('moveStay', $stay->id, $target->id, '2026-11-30')
+            ->assertOk()
+            ->assertNotified('Гость уже занимает койку 3.1.: с 29.11 по 01.12');
+
+        $this->assertUnchanged($stay);
+    }
+
     /** Растягивание меняет только день выезда. */
     public function test_resize_updates_date_to(): void
     {

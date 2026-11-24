@@ -280,6 +280,25 @@ class ScheduleStayActionsTest extends TestCase
         $this->assertSame(1, Stay::query()->count());
     }
 
+    /** Гость уже живёт на другой койке: уведомление с койкой и датами, окно остаётся открытым с данными. */
+    public function test_create_guest_overlap_shows_notification_and_keeps_modal(): void
+    {
+        $bed = $this->makeBed();
+        $other = Bed::factory()->create(['room_id' => $bed->room_id, 'number' => 2]);
+        $existing = $this->makeStay($other, '2026-11-23', '2026-11-26');
+
+        Livewire::test(Schedule::class)
+            ->mountAction('createStay', ['bed_id' => $bed->id, 'date' => '2026-11-24'])
+            ->setActionData(['user_id' => $existing->user_id, 'notes' => 'Поздний заезд'])
+            ->callMountedAction() // «Выбрать» в окне «Клиент»
+            ->callMountedAction()
+            ->assertNotified('Гость уже занимает койку 1.2.: с 23.11 по 26.11')
+            ->assertActionMounted('createStay')
+            ->assertActionDataSet(['user_id' => $existing->user_id, 'notes' => 'Поздний заезд']);
+
+        $this->assertSame(1, Stay::query()->count());
+    }
+
     /** Новый клиент создаётся прямо в окне и подставляется в поле гостя. */
     public function test_create_with_new_guest(): void
     {
