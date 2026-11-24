@@ -222,6 +222,20 @@ class SchedulePageTest extends TestCase
         $this->assertSame(1, substr_count($html, 'class="sch-guest"'));
     }
 
+    /** Месяц, от которого в окне один день, подписан коротко; полное название остаётся в подсказке. */
+    public function test_single_day_month_label_is_shortened(): void
+    {
+        $this->login();
+        Bed::factory()->create();
+
+        Livewire::test(Schedule::class)
+            ->set('date', '2027-01-01')
+            ->assertSeeHtml('title="Декабрь 2026"')
+            ->assertSeeHtml('<span>Дек 2026</span>')
+            ->assertSeeHtml('<span>Январь 2027</span>')
+            ->assertDontSeeHtml('<span>Декабрь 2026</span>');
+    }
+
     /** Без комнат — подсказка со ссылкой на справочник. */
     public function test_empty_hostel_shows_hint(): void
     {

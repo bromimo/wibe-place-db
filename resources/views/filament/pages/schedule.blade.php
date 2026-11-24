@@ -161,8 +161,13 @@
                     <div class="sch-row">
                         <div class="sch-label"></div>
                         @foreach ($schedule['months'] as $month)
-                            <div class="sch-month" style="width: calc({{ $month['span'] }} * var(--sch-day-w));">
-                                <span>{{ $month['label'] }}</span>
+                            @php
+                                // В столбец одного дня полное название не помещается: «Декабрь 2026» → «Дек 2026».
+                                [$monthName, $monthYear] = explode(' ', $month['label'], 2);
+                                $monthLabel = $month['span'] < 2 ? mb_substr($monthName, 0, 3) . ' ' . $monthYear : $month['label'];
+                            @endphp
+                            <div class="sch-month" style="width: calc({{ $month['span'] }} * var(--sch-day-w));" title="{{ $month['label'] }}">
+                                <span>{{ $monthLabel }}</span>
                             </div>
                         @endforeach
                     </div>
