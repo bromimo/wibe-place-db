@@ -13,7 +13,7 @@
         .sch-toolbar .sch-date { width: 11rem; }
 
         .sch-scroll {
-            --sch-label-w: 150px;
+            --sch-label-w: 120px;
             --sch-skew: 10px;
             position: relative;
             overflow: auto;
@@ -32,8 +32,9 @@
             display: flex; align-items: center; gap: .375rem;
             padding: 0 .75rem; background: #fff;
             border-right: 1px solid #d1d5db; border-bottom: 1px solid #e5e7eb;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            white-space: nowrap; overflow: hidden;
         }
+        .sch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
         .sch-cell {
             flex: 0 0 var(--sch-day-w); width: var(--sch-day-w);
             border-right: 1px solid #f0f1f3; border-bottom: 1px solid #e5e7eb;
@@ -48,7 +49,7 @@
         .sch-head .sch-row { height: 28px; }
         .sch-month {
             flex: 0 0 auto; border-right: 1px solid #d1d5db; border-bottom: 1px solid #e5e7eb;
-            font-weight: 600; display: flex; align-items: center; overflow: hidden;
+            font-weight: 600; display: flex; align-items: center; overflow: clip;
         }
         .sch-month span { position: sticky; left: var(--sch-label-w); padding: 0 .75rem; white-space: nowrap; }
         .sch-day { display: flex; align-items: center; justify-content: center; gap: .25rem; color: #4b5563; }
@@ -83,7 +84,8 @@
         .sch-paid, .sch-debt { flex: none; padding: 0 .3rem; border-radius: .25rem; background: #fff; font-weight: 600; line-height: 1.25rem; }
         .sch-paid { color: #15803d; }
         .sch-debt { color: #dc2626; }
-        .sch-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 10px; }
+        /* Ручка шире скоса правого края, чтобы за неё можно было взяться по всей высоте полосы. */
+        .sch-resize { position: absolute; top: 0; right: 0; bottom: 0; width: calc(var(--sch-skew-r) + 8px); }
         .sch-bar[data-draggable="1"] .sch-resize { cursor: ew-resize; }
         .sch-bar { touch-action: none; }
         .sch-bar.sch-dragged { opacity: .35; }
@@ -130,12 +132,13 @@
     @else
         <div
             class="sch-scroll"
-            style="--sch-day-w: 130px; --sch-row-h: 40px; --sch-days: {{ $dayCount }};"
+            style="--sch-day-w: 104px; --sch-row-h: 40px; --sch-days: {{ $dayCount }};"
             x-data="scheduleDrag"
             x-on:pointerdown="down($event)"
             x-on:pointermove="move($event)"
             x-on:pointerup="up($event)"
             x-on:pointercancel="cancel()"
+            x-on:lostpointercapture.window="lost($event)"
             x-on:keydown.escape.window="cancel()"
         >
             <div class="sch-grid" x-ref="grid">
@@ -177,8 +180,16 @@
                     >
                         <div class="sch-row sch-room-row">
                             <div class="sch-label" title="{{ $room['name'] }}">
-                                <button type="button" class="sch-toggle" x-on:click="toggle()" x-text="collapsed ? '▼' : '▲'">▲</button>
-                                {{ $room['name'] }}
+                                <button
+                                    type="button"
+                                    class="sch-toggle"
+                                    x-on:click="toggle()"
+                                    x-text="collapsed ? '▶' : '▼'"
+                                    x-bind:aria-expanded="collapsed ? 'false' : 'true'"
+                                    x-bind:aria-label="collapsed ? 'Развернуть комнату' : 'Свернуть комнату'"
+                                    aria-label="Свернуть комнату"
+                                >▼</button>
+                                <span class="sch-name">{{ $room['name'] }}</span>
                             </div>
                             @foreach ($room['free'] as $free)
                                 <div @class(['sch-cell', 'sch-full' => $free <= 0])>{{ $free }} · {{ $room['price'] }}</div>
@@ -188,7 +199,7 @@
                         <div x-show="! collapsed">
                             @forelse ($room['beds'] as $bed)
                                 <div class="sch-row sch-bed-row" data-bed-id="{{ $bed['id'] }}" wire:key="bed-{{ $bed['id'] }}">
-                                    <div class="sch-label">{{ $bed['name'] }}</div>
+                                    <div class="sch-label" title="{{ $bed['name'] }}"><span class="sch-name">{{ $bed['name'] }}</span></div>
                                     <div class="sch-track">
                                         @foreach ($schedule['days'] as $day)
                                             <div
@@ -266,6 +277,8 @@
             let drag = null;
             // Число запросов переноса, ожидающих ответа сервера.
             let pending = 0;
+            // Указатель отменённого нажатия: клик после его отпускания гасится.
+            let cancelledPointer = null;
 
             // Даты считаются в UTC по строкам Y-m-d, чтобы часовой пояс и переход на летнее время браузера не сдвигали день.
             const toUtc = (ymd) => Date.parse(ymd + 'T00:00:00Z');
@@ -274,7 +287,14 @@
             const cssPx = (el, name) => parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0;
 
             return {
+                // Компонент удалён посреди перетаскивания: останавливаем автопрокрутку и убираем «тень».
+                destroy() {
+                    this.cancel();
+                },
+
                 down(e) {
+                    cancelledPointer = null;
+
                     const bar = e.target.closest('[data-stay-id]');
 
                     if (! bar || e.button !== 0 || drag !== null) {
@@ -341,7 +361,16 @@
                 },
 
                 up(e) {
-                    if (drag === null || e.pointerId !== drag.pointerId) {
+                    if (drag === null) {
+                        if (cancelledPointer !== null && e.pointerId === cancelledPointer) {
+                            cancelledPointer = null;
+                            this.swallowClick();
+                        }
+
+                        return;
+                    }
+
+                    if (e.pointerId !== drag.pointerId) {
                         return;
                     }
 
@@ -349,7 +378,10 @@
                     drag = null;
 
                     if (! current.active) {
-                        if (! current.moved) {
+                        if (current.moved) {
+                            // Сдвинутая, но не перенесённая полоса (выселившийся гость или ждём ответа сервера) — не клик.
+                            this.swallowClick();
+                        } else {
                             this.$wire.mountAction('editStay', { stay: current.stayId });
                         }
 
@@ -394,7 +426,15 @@
                         this.clear(drag);
                     }
 
+                    cancelledPointer = drag.pointerId;
                     drag = null;
+                },
+
+                // Захват указателя потерян без отпускания (полосу убрала перерисовка, окно потеряло фокус) — отмена.
+                lost(e) {
+                    if (drag !== null && e.pointerId === drag.pointerId) {
+                        this.cancel();
+                    }
                 },
 
                 // Начало перетаскивания: полупрозрачная копия полосы в слое над сеткой.
@@ -426,7 +466,10 @@
                         // Не короче одной ночи.
                         deltaDays = Math.max(deltaDays, 1 - nights(drag.dateFrom, drag.dateTo));
                     } else {
-                        const hit = document.elementsFromPoint(drag.x, drag.y).find((el) => el.matches('[data-bed-id]'));
+                        const hits = document.elementsFromPoint(drag.x, drag.y);
+                        // Под закреплённой шапкой лежат скрытые прокруткой строки — над шапкой койка не меняется.
+                        const overHead = hits.some((el) => el.classList.contains('sch-head'));
+                        const hit = overHead ? null : hits.find((el) => el.matches('[data-bed-id]'));
                         row = hit ?? drag.row;
                     }
 

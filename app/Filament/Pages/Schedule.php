@@ -39,6 +39,10 @@ class Schedule extends Page
     /** Число дней в окне графика. */
     private const WINDOW_DAYS = 31;
 
+    /** Допустимые годы дат из браузера. */
+    private const MIN_YEAR = 2000;
+    private const MAX_YEAR = 2100;
+
     protected static ?string $title = 'График';
     protected static ?string $navigationLabel = 'График';
     protected static ?int $navigationSort = -3;
@@ -401,7 +405,7 @@ class Schedule extends Page
         return $this->parseDate($this->date) ?? today()->toImmutable();
     }
 
-    /** Строгий разбор даты в формате Y-m-d.
+    /** Строгий разбор даты в формате Y-m-d; годы вне 2000–2100 отклоняются, чтобы не дойти до БД.
      * @param string $value Строка даты.
      * @return CarbonImmutable|null
      */
@@ -410,6 +414,12 @@ class Schedule extends Page
         $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
 
         if ($parsed === false || $parsed->format('Y-m-d') !== $value) {
+            return null;
+        }
+
+        $year = (int) $parsed->format('Y');
+
+        if ($year < self::MIN_YEAR || $year > self::MAX_YEAR) {
             return null;
         }
 

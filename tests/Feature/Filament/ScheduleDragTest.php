@@ -189,4 +189,27 @@ class ScheduleDragTest extends TestCase
         $this->assertSame(1, Stay::query()->count());
         $this->assertUnchanged($stay);
     }
+
+    /** Даты вне 2000–2100 года не доходят до БД: уведомление, запись прежняя. */
+    public function test_out_of_range_dates_are_rejected(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-27');
+
+        $calls = [
+            ['moveStay', $stay->id, $bed->id, '9999-12-30'],
+            ['moveStay', $stay->id, $bed->id, '1999-12-31'],
+            ['resizeStay', $stay->id, '9999-12-30'],
+            ['resizeStay', $stay->id, '2101-01-01'],
+        ];
+
+        foreach ($calls as $call) {
+            Livewire::test(Schedule::class)
+                ->call(...$call)
+                ->assertOk()
+                ->assertNotified('Не удалось перенести заселение');
+        }
+
+        $this->assertUnchanged($stay);
+    }
 }

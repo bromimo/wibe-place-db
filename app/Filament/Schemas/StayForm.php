@@ -74,6 +74,7 @@ class StayForm
             ...$components,
             Repeater::make('payments')
                 ->label('Оплаты')
+                ->reorderable(false)
                 ->columns(3)
                 ->defaultItems(0)
                 ->addActionLabel('Добавить оплату')
