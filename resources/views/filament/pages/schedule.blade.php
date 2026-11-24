@@ -9,6 +9,16 @@
 
 <x-filament-panels::page>
     <style>
+        /* Панель считает шапку высотой 4rem: меню прилипает на 4rem от верха и вместе с областью содержимого получает
+           высоту «окно минус 4rem». С высоким логотипом шапка выше, поэтому страница прокручивается на разницу, а меню
+           уезжает под шапку. На графике прокручивается только сетка: здесь берётся настоящая высота шапки (fitHeight). */
+        .fi-main-ctn { min-height: 0 !important; }
+
+        .fi-sidebar {
+            top: var(--sch-topbar-h, 4rem) !important;
+            height: calc(100dvh - var(--sch-topbar-h, 4rem)) !important;
+        }
+
         .sch-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
         .sch-toolbar .sch-date { width: 11rem; }
 
@@ -17,7 +27,8 @@
             --sch-skew: 10px;
             position: relative;
             overflow: auto;
-            max-height: calc(100vh - 13rem);
+            /* Высоту до низа окна считает компонент scheduleDrag (fitHeight); запасное значение — до его запуска. */
+            max-height: var(--sch-avail-h, calc(100vh - 20rem));
             border: 1px solid #e5e7eb;
             border-radius: .5rem;
             background: #fff;
@@ -314,9 +325,46 @@
             const nights = (from, to) => Math.round((toUtc(to) - toUtc(from)) / 86400000);
             const cssPx = (el, name) => parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0;
 
+            // Пересчёт высоты сетки при изменении размера окна; снимается в destroy().
+            let onResize = null;
+
             return {
+                init() {
+                    onResize = () => this.fitHeight();
+                    window.addEventListener('resize', onResize);
+                    this.$nextTick(() => this.fitHeight());
+                },
+
+                // Сетка занимает место от своего верха до низа окна, чтобы вертикально прокручивалась только она,
+                // а меню и шапка страницы оставались на месте. Значение хранится в переменной на корне документа:
+                // атрибут style самой сетки Livewire перезаписывает при каждой перерисовке.
+                fitHeight() {
+                    const root = document.documentElement;
+                    const topbar = document.querySelector('.fi-topbar-ctn');
+
+                    if (topbar) {
+                        root.style.setProperty('--sch-topbar-h', Math.ceil(topbar.getBoundingClientRect().height) + 'px');
+                    }
+
+                    const top = this.$el.getBoundingClientRect().top + window.scrollY;
+                    let height = Math.floor(window.innerHeight - top);
+
+                    root.style.setProperty('--sch-avail-h', height + 'px');
+
+                    // Под сеткой остаются отступы макета панели: убираем ровно столько, на сколько страница выше окна.
+                    const overflow = root.scrollHeight - window.innerHeight;
+
+                    if (overflow > 0) {
+                        height = Math.max(240, height - overflow);
+                        root.style.setProperty('--sch-avail-h', height + 'px');
+                    }
+                },
+
                 // Компонент удалён посреди перетаскивания: останавливаем автопрокрутку и убираем «тень».
                 destroy() {
+                    window.removeEventListener('resize', onResize);
+                    document.documentElement.style.removeProperty('--sch-avail-h');
+                    document.documentElement.style.removeProperty('--sch-topbar-h');
                     this.cancel();
                 },
 
