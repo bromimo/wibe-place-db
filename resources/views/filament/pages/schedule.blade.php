@@ -39,6 +39,9 @@
             border-right: 1px solid #f0f1f3; border-bottom: 1px solid #e5e7eb;
         }
         .sch-cell.sch-weekend { background: #f6f7f9; }
+        .sch-track .sch-cell { cursor: pointer; }
+        .sch-track .sch-cell:hover { background: #eef2f7; }
+        .sch-bar { cursor: pointer; }
 
         .sch-head { position: sticky; top: 0; z-index: 4; background: #fff; }
         .sch-head .sch-label { z-index: 5; font-weight: 600; color: #6b7280; }
@@ -171,7 +174,11 @@
                                     <div class="sch-label">{{ $bed['name'] }}</div>
                                     <div class="sch-track">
                                         @foreach ($schedule['days'] as $day)
-                                            <div @class(['sch-cell', 'sch-weekend' => $day['weekend']]) data-date="{{ $day['date'] }}"></div>
+                                            <div
+                                                @class(['sch-cell', 'sch-weekend' => $day['weekend']])
+                                                data-date="{{ $day['date'] }}"
+                                                wire:click="mountAction('createStay', { bed_id: {{ $bed['id'] }}, date: '{{ $day['date'] }}' })"
+                                            ></div>
                                         @endforeach
 
                                         @foreach ($bed['stays'] as $stay)
@@ -198,6 +205,7 @@
                                                     data-date-from="{{ $stay['date_from'] }}"
                                                     data-date-to="{{ $stay['date_to'] }}"
                                                     data-draggable="{{ $stay['draggable'] ? '1' : '0' }}"
+                                                    wire:click.stop="mountAction('editStay', { stay: {{ $stay['id'] }} })"
                                                     title="{{ $stay['guest'] }}&#10;{{ CarbonImmutable::parse($stay['date_from'])->format('d.m.Y') }} — {{ CarbonImmutable::parse($stay['date_to'])->format('d.m.Y') }}&#10;{{ StayStatus::from($stay['status'])->label() }}&#10;Оплачено: {{ $stay['paid'] }}, долг: {{ $stay['debt'] }}"
                                                 >
                                                     <span class="sch-guest">{{ $stay['guest'] }}</span>
