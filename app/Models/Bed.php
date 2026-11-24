@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Abstracts\Models\AbstractModel;
+use App\Exceptions\BedHasStaysException;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -14,6 +15,19 @@ class Bed extends AbstractModel
         'name',
         'sort',
     ];
+
+    /** Запрещает удаление койки с заселениями.
+     * @throws BedHasStaysException
+     * @return void
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (self $bed): void {
+            if ($bed->stays()->exists()) {
+                throw new BedHasStaysException();
+            }
+        });
+    }
 
     /** Комната койки.
      * @return BelongsTo<Room, $this>

@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
+use App\Exceptions\UserHasStaysException;
 
 class UserObserver
 {
@@ -20,6 +21,17 @@ class UserObserver
 
         if ($oldFile && Storage::exists($oldFile)) {
             Storage::delete($oldFile);
+        }
+    }
+
+    /**
+     * Перед удалением пользователя: запрет, если есть заселения.
+     * @throws UserHasStaysException
+     */
+    public function deleting(User $user): void
+    {
+        if ($user->stays()->exists()) {
+            throw new UserHasStaysException();
         }
     }
 
