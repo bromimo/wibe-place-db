@@ -120,6 +120,47 @@
 
         .sch-hint { padding: 2rem; text-align: center; color: #6b7280; }
         .sch-hint a { color: #38649c; text-decoration: underline; }
+
+        /* Окно заселения. */
+        .sch-stay-edit .fi-modal-header > div { flex: 1; min-width: 0; }
+        .sch-stay-edit .fi-modal-heading { padding-inline-end: 2.5rem; }
+        .sch-stay-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
+        .sch-stay-status { font-size: .9375rem; font-weight: 600; }
+        .sch-stay-status-booked { color: #38649c; }
+        .sch-stay-status-living { color: #2f9e58; }
+        .sch-stay-status-checked_out { color: #6b7280; }
+
+        .sch-stay-guest { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
+        .sch-stay-guest-name { font-size: 1.25rem; font-weight: 700; }
+        .sch-stay-guest-phone { font-size: 1rem; color: #4b5563; }
+
+        .sch-stay-dates .fi-growable { flex: 1 1 0; min-width: 0; }
+        .sch-stay-nights {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-width: 5rem; padding: .25rem .75rem; border: 1px solid #d1d5db; border-radius: .5rem; line-height: 1.1;
+        }
+        .sch-stay-nights-value { font-size: 1.75rem; font-weight: 700; }
+        .sch-stay-nights-caption { font-size: .75rem; color: #6b7280; }
+
+        .sch-stay-cost { display: flex; flex-direction: column; align-items: flex-end; text-align: right; line-height: 1.2; }
+        .sch-stay-cost-label { font-size: .875rem; font-weight: 500; }
+        .sch-stay-cost-value { font-size: 1.75rem; font-weight: 700; }
+        .sch-stay-cost-hint { font-size: .75rem; color: #6b7280; min-height: 1em; }
+        .sch-stay-manual-total { font-size: 1.25rem; font-weight: 700; }
+
+        .sch-stay-money { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .25rem 1rem; font-size: 1.0625rem; font-weight: 600; }
+        .sch-stay-paid { color: #15803d; }
+        .sch-stay-debt { color: #dc2626; }
+        .sch-stay-debt.sch-stay-zero { color: #6b7280; }
+
+        .sch-stay-buttons .fi-ac { width: 100%; }
+        .sch-stay-details .fi-section-header { display: none; }
+        .sch-stay-details .fi-section.fi-collapsed { display: none; }
+        .sch-stay-buttons .sch-stay-details-toggle { margin-inline-start: auto; }
+
+        .sch-stay-edit .fi-modal-footer-actions { width: 100%; justify-content: flex-end; }
+        .sch-stay-edit .fi-modal-footer-actions > .sch-stay-delete { order: -1; margin-inline-end: auto; }
+        .sch-stay-edit .fi-modal-footer-actions > .sch-stay-submit { order: 1; }
     </style>
 
     <div class="sch-toolbar">

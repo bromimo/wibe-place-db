@@ -79,7 +79,7 @@ class ScheduleStayActionsTest extends TestCase
         return Livewire::test(Schedule::class)->mountAction('editStay', ['stay' => $stay->id]);
     }
 
-    /** Действие подвала окна правки.
+    /** Вложенное действие окна правки: «Заселить», «Выезд» или «Удалить».
      * @param Stay $stay Заселение.
      * @param string $name Имя действия.
      * @return array<int, TestAction|string>
@@ -104,7 +104,7 @@ class ScheduleStayActionsTest extends TestCase
                 'status' => 'living',
                 'tariff' => 'standard',
             ])
-            ->assertMountedActionModalSee('Стоимость: 1 × 460 = 460');
+            ->assertMountedActionModalSee(['₴ 460', '1 × ₴ 460']);
     }
 
     /** Заезд в будущем создаётся бронью. */
@@ -244,9 +244,9 @@ class ScheduleStayActionsTest extends TestCase
         ]);
 
         $this->editStay($stay)
-            ->assertMountedActionModalSee('Стоимость: 2 × 400 = 800')
+            ->assertMountedActionModalSee(['₴ 800', '2 × ₴ 400'])
             ->setActionData(['bed_id' => $other->id])
-            ->assertMountedActionModalSee('Стоимость: 2 × 600 = 1200');
+            ->assertMountedActionModalSee(['₴ 1200', '2 × ₴ 600']);
     }
 
     /** Поиск гостя находит по строке «Фамилия Имя» и по части телефона. */
@@ -523,7 +523,7 @@ class ScheduleStayActionsTest extends TestCase
                 'status' => 'living',
                 'tariff' => 'standard',
             ])
-            ->assertMountedActionModalSee([$stay->user->full_name, 'Стоимость: 2 × 460 = 920', 'Оплачено: 0 / Долг: 920'])
+            ->assertMountedActionModalSee([$stay->user->full_name, '₴ 920', '2 × ₴ 460', 'Оплачено: ₴ 0', 'Остаток: ₴ 920'])
             ->setActionData(['date_to' => '2026-11-28'])
             ->callMountedAction()
             ->assertHasNoActionErrors()

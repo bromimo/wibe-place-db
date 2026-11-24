@@ -28,7 +28,11 @@ use App\Actions\Stay\UpdateStayAction;
 use App\Actions\Stay\CheckInStayAction;
 use App\Actions\Stay\CheckOutStayAction;
 use Filament\Notifications\Notification;
+use App\Actions\Stay\AddStayPaymentAction;
+use Illuminate\Contracts\Support\Htmlable;
 use App\Actions\Stay\SyncStayPaymentsAction;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use App\Http\Queries\Schedule\GetScheduleQuery;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -151,8 +155,11 @@ class Schedule extends Page
     {
         return Action::make('createStay')
             ->modalHeading('Новое заселение')
-            ->modalSubmitActionLabel('Сохранить')
-            ->schema(StayForm::components())
+            ->modalSubmitActionLabel('Создать')
+            ->modalCancelActionLabel('Отмена')
+            ->modalWidth(Width::TwoExtraLarge)
+            ->extraModalWindowAttributes(['class' => 'sch-stay-window'])
+            ->schema(StayForm::createComponents())
             ->mountUsing(function (Action $action, ?Schema $schema, array $arguments): void {
                 $defaults = $this->createDefaults($arguments);
 
@@ -177,15 +184,24 @@ class Schedule extends Page
             });
     }
 
-    /** Окно правки заселения с оплатами и кнопками смены состояния; аргумент: stay (id).
+    /** Окно правки заселения с оплатами, быстрой оплатой и кнопками смены состояния; аргумент: stay (id).
      * @return Action
      */
     public function editStayAction(): Action
     {
         return Action::make('editStay')
-            ->modalHeading(fn (array $arguments): ?string => $this->findStay($arguments)?->user->full_name)
-            ->modalSubmitActionLabel('Сохранить')
-            ->schema(fn (array $arguments): array => StayForm::components($this->findStay($arguments)))
+            ->modalHeading(fn (array $arguments): ?Htmlable => ($stay = $this->findStay($arguments)) ? StayForm::editHeading($stay) : null)
+            ->modalSubmitActionLabel('Сохранить изменения')
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-stay-submit']))
+            ->modalCancelActionLabel('Закрыть')
+            ->modalWidth(Width::TwoExtraLarge)
+            ->extraModalWindowAttributes(['class' => 'sch-stay-window sch-stay-edit'])
+            ->registerModalActions([fn (array $arguments): array => $this->stayStateActions($this->findStay($arguments))])
+            ->schema(fn (array $arguments, Action $action): array => ($stay = $this->findStay($arguments)) === null ? [] : StayForm::editComponents(
+                $stay,
+                $this->takePaymentAction($stay),
+                [$action->getModalAction('checkIn'), $action->getModalAction('checkOut')],
+            ))
             ->mountUsing(function (Action $action, ?Schema $schema, array $arguments): void {
                 $stay = $this->findStay($arguments);
 
@@ -222,14 +238,50 @@ class Schedule extends Page
 
                 $this->refreshSchedule();
             })
-            ->extraModalFooterActions(fn (array $arguments): array => $this->stayFooterActions($this->findStay($arguments)));
+            ->extraModalFooterActions(fn (array $arguments): array => [$this->deleteStayAction($this->findStay($arguments))]);
     }
 
-    /** Кнопки подвала окна правки: заселить, выселить, удалить.
+    /** Кнопка «Оплата» окна правки: сразу записывает оплату на сегодня, окно и несохранённые правки остаются.
+     * @param Stay $stay Правимое заселение.
+     * @return Action
+     */
+    private function takePaymentAction(Stay $stay): Action
+    {
+        return Action::make('takePayment')
+            ->label('Оплата')
+            ->button()
+            ->color('success')
+            ->action(function (Get $get, Set $set) use ($stay): void {
+                $amount = filter_var($get('quick_payment'), FILTER_VALIDATE_INT);
+
+                try {
+                    $payment = (new AddStayPaymentAction())->run($stay, $amount === false ? 0 : $amount);
+                } catch (DomainException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+
+                    return;
+                } catch (ModelNotFoundException) {
+                    $this->notifyStayMissing();
+                    $this->refreshSchedule();
+
+                    return;
+                }
+
+                StayForm::addPaymentToState($get, $set, $payment);
+
+                Notification::make()->success()->title('Оплата принята: ' . StayForm::hryvnias($payment->amount))->send();
+
+                // Действие поля перерисовывает только форму окна; полосе графика нужна полная перерисовка страницы.
+                $this->refreshSchedule();
+                $this->forceRender();
+            });
+    }
+
+    /** Кнопки смены состояния в окне правки: заселить, выезд.
      * @param Stay|null $stay Правимое заселение.
      * @return array<int, Action>
      */
-    private function stayFooterActions(?Stay $stay): array
+    private function stayStateActions(?Stay $stay): array
     {
         return [
             Action::make('checkIn')
@@ -241,7 +293,7 @@ class Schedule extends Page
                     $this->applyFooterChange($action, fn () => (new CheckInStayAction())->run($stay));
                 }),
             Action::make('checkOut')
-                ->label('Выселить')
+                ->label('Выезд')
                 ->color('warning')
                 ->visible($stay?->status === StayStatus::Living)
                 ->requiresConfirmation()
@@ -259,23 +311,32 @@ class Schedule extends Page
                             ->send();
                     }
                 }),
-            Action::make('delete')
-                ->label('Удалить')
-                ->color('danger')
-                ->visible($stay !== null)
-                ->requiresConfirmation()
-                ->modalHeading('Удалить заселение?')
-                ->modalDescription('Заселение и его оплаты будут удалены')
-                ->cancelParentActions()
-                ->action(function (Action $action) use ($stay): void {
-                    $this->applyFooterChange($action, fn () => (new DeleteStayAction())->run($stay));
-                }),
         ];
     }
 
-    /** Выполняет действие подвала окна правки. Ошибка предметной области: уведомление, закрывается только
+    /** Кнопка «Удалить» в подвале окна правки, слева от остальных.
+     * @param Stay|null $stay Правимое заселение.
+     * @return Action
+     */
+    private function deleteStayAction(?Stay $stay): Action
+    {
+        return Action::make('delete')
+            ->label('Удалить')
+            ->color('danger')
+            ->visible($stay !== null)
+            ->requiresConfirmation()
+            ->modalHeading('Удалить заселение?')
+            ->modalDescription('Заселение и его оплаты будут удалены')
+            ->extraAttributes(['class' => 'sch-stay-delete'])
+            ->cancelParentActions()
+            ->action(function (Action $action) use ($stay): void {
+                $this->applyFooterChange($action, fn () => (new DeleteStayAction())->run($stay));
+            });
+    }
+
+    /** Выполняет вложенное действие окна правки (смена состояния, удаление). Ошибка предметной области: уведомление, закрывается только
      * само действие, окно правки остаётся открытым. Пропавшее заселение: уведомление, окна закрываются.
-     * @param Action $action Действие подвала.
+     * @param Action $action Вложенное действие.
      * @param callable(): mixed $change Вызов действия над заселением.
      * @throws Halt
      * @return void
