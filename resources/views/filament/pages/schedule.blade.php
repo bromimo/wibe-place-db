@@ -85,6 +85,12 @@
         .sch-debt { color: #dc2626; }
         .sch-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 10px; }
         .sch-bar[data-draggable="1"] .sch-resize { cursor: ew-resize; }
+        .sch-bar { touch-action: none; }
+        .sch-bar.sch-dragged { opacity: .35; }
+        .sch-ghosts { position: absolute; inset: 0; z-index: 2; overflow: hidden; pointer-events: none; }
+        .sch-ghost { opacity: .7; }
+        .sch-dragging, .sch-dragging * { user-select: none; cursor: grabbing !important; }
+        .sch-dragging.sch-resizing, .sch-dragging.sch-resizing * { cursor: ew-resize !important; }
 
         .sch-overdue {
             position: absolute; top: 5px; height: calc(var(--sch-row-h) - 10px); z-index: 0;
@@ -122,8 +128,19 @@
             <a href="{{ RoomResource::getUrl('index') }}">Добавьте комнаты и койки в разделе „Комнаты“</a>
         </div>
     @else
-        <div class="sch-scroll" style="--sch-day-w: 130px; --sch-row-h: 40px; --sch-days: {{ $dayCount }};">
-            <div class="sch-grid">
+        <div
+            class="sch-scroll"
+            style="--sch-day-w: 130px; --sch-row-h: 40px; --sch-days: {{ $dayCount }};"
+            x-data="scheduleDrag"
+            x-on:pointerdown="down($event)"
+            x-on:pointermove="move($event)"
+            x-on:pointerup="up($event)"
+            x-on:pointercancel="cancel()"
+            x-on:keydown.escape.window="cancel()"
+        >
+            <div class="sch-grid" x-ref="grid">
+                <div class="sch-ghosts" x-ref="ghosts" wire:ignore></div>
+
                 <div class="sch-head">
                     <div class="sch-row">
                         <div class="sch-label"></div>
@@ -205,7 +222,6 @@
                                                     data-date-from="{{ $stay['date_from'] }}"
                                                     data-date-to="{{ $stay['date_to'] }}"
                                                     data-draggable="{{ $stay['draggable'] ? '1' : '0' }}"
-                                                    wire:click.stop="mountAction('editStay', { stay: {{ $stay['id'] }} })"
                                                     title="{{ $stay['guest'] }}&#10;{{ CarbonImmutable::parse($stay['date_from'])->format('d.m.Y') }} — {{ CarbonImmutable::parse($stay['date_to'])->format('d.m.Y') }}&#10;{{ StayStatus::from($stay['status'])->label() }}&#10;Оплачено: {{ $stay['paid'] }}, долг: {{ $stay['debt'] }}"
                                                 >
                                                     <span class="sch-guest">{{ $stay['guest'] }}</span>
@@ -235,4 +251,252 @@
             </div>
         </div>
     @endif
+
+    @script
+    <script>
+        // Перетаскивание полос: перенос за тело, смена дня выезда за правый край. Шаг — один день.
+        Alpine.data('scheduleDrag', () => {
+            // Порог в пикселях, меньше которого нажатие считается кликом.
+            const CLICK_SLOP = 4;
+            // Ширина зоны у края видимой области, где сетка прокручивается сама, и шаг прокрутки за кадр.
+            const EDGE = 60;
+            const SCROLL_STEP = 12;
+
+            // Текущее нажатие на полосу; хранится вне реактивных данных Alpine.
+            let drag = null;
+            // Число запросов переноса, ожидающих ответа сервера.
+            let pending = 0;
+
+            // Даты считаются в UTC по строкам Y-m-d, чтобы часовой пояс и переход на летнее время браузера не сдвигали день.
+            const toUtc = (ymd) => Date.parse(ymd + 'T00:00:00Z');
+            const addDays = (ymd, days) => new Date(toUtc(ymd) + days * 86400000).toISOString().slice(0, 10);
+            const nights = (from, to) => Math.round((toUtc(to) - toUtc(from)) / 86400000);
+            const cssPx = (el, name) => parseFloat(getComputedStyle(el).getPropertyValue(name)) || 0;
+
+            return {
+                down(e) {
+                    const bar = e.target.closest('[data-stay-id]');
+
+                    if (! bar || e.button !== 0 || drag !== null) {
+                        return;
+                    }
+
+                    e.preventDefault();
+                    bar.setPointerCapture(e.pointerId);
+
+                    const draggable = bar.dataset.draggable === '1' && pending === 0;
+                    const barRect = bar.getBoundingClientRect();
+                    const gridRect = this.$refs.grid.getBoundingClientRect();
+                    const row = bar.closest('[data-bed-id]');
+
+                    drag = {
+                        bar,
+                        row,
+                        draggable,
+                        scroller: e.currentTarget,
+                        pointerId: e.pointerId,
+                        mode: e.target.closest('[data-resize-handle]') ? 'resize' : 'move',
+                        stayId: Number(bar.dataset.stayId),
+                        bedId: Number(row.dataset.bedId),
+                        dateFrom: bar.dataset.dateFrom,
+                        dateTo: bar.dataset.dateTo,
+                        dayWidth: cssPx(e.currentTarget, '--sch-day-w'),
+                        // Положение и размер полосы в координатах сетки: от них строится «тень».
+                        left: barRect.left - gridRect.left,
+                        top: bar.offsetTop,
+                        width: barRect.width,
+                        startX: e.clientX,
+                        startY: e.clientY,
+                        startScroll: e.currentTarget.scrollLeft,
+                        x: e.clientX,
+                        y: e.clientY,
+                        moved: false,
+                        active: false,
+                        deltaDays: 0,
+                        targetBedId: Number(row.dataset.bedId),
+                        ghost: null,
+                        frame: null,
+                    };
+                },
+
+                move(e) {
+                    if (drag === null || e.pointerId !== drag.pointerId) {
+                        return;
+                    }
+
+                    drag.x = e.clientX;
+                    drag.y = e.clientY;
+
+                    if (! drag.moved && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= CLICK_SLOP) {
+                        drag.moved = true;
+
+                        if (drag.draggable) {
+                            this.start();
+                        }
+                    }
+
+                    if (drag.active) {
+                        this.update();
+                    }
+                },
+
+                up(e) {
+                    if (drag === null || e.pointerId !== drag.pointerId) {
+                        return;
+                    }
+
+                    const current = drag;
+                    drag = null;
+
+                    if (! current.active) {
+                        if (! current.moved) {
+                            this.$wire.mountAction('editStay', { stay: current.stayId });
+                        }
+
+                        return;
+                    }
+
+                    this.stop(current);
+                    this.swallowClick();
+
+                    let request = null;
+
+                    if (current.mode === 'move' && (current.deltaDays !== 0 || current.targetBedId !== current.bedId)) {
+                        request = this.$wire.moveStay(current.stayId, current.targetBedId, addDays(current.dateFrom, current.deltaDays));
+                    } else if (current.mode === 'resize' && current.deltaDays !== 0) {
+                        request = this.$wire.resizeStay(current.stayId, addDays(current.dateTo, current.deltaDays));
+                    }
+
+                    if (request === null) {
+                        this.clear(current);
+
+                        return;
+                    }
+
+                    // До ответа «тень» стоит в новой позиции; после ответа сервер перерисует полосу сам.
+                    pending++;
+
+                    const done = () => {
+                        pending--;
+                        this.clear(current);
+                    };
+
+                    request.then(done, done);
+                },
+
+                cancel() {
+                    if (drag === null) {
+                        return;
+                    }
+
+                    if (drag.active) {
+                        this.stop(drag);
+                        this.clear(drag);
+                    }
+
+                    drag = null;
+                },
+
+                // Начало перетаскивания: полупрозрачная копия полосы в слое над сеткой.
+                start() {
+                    const ghost = drag.bar.cloneNode(true);
+
+                    ['wire:key', 'data-stay-id', 'data-date-from', 'data-date-to', 'data-draggable', 'title'].forEach((name) => ghost.removeAttribute(name));
+                    ghost.querySelector('[data-resize-handle]')?.removeAttribute('data-resize-handle');
+                    ghost.classList.add('sch-ghost');
+                    this.$refs.ghosts.appendChild(ghost);
+
+                    drag.ghost = ghost;
+                    drag.active = true;
+                    drag.bar.classList.add('sch-dragged');
+                    drag.scroller.classList.add('sch-dragging');
+                    drag.scroller.classList.toggle('sch-resizing', drag.mode === 'resize');
+
+                    this.autoScroll();
+                },
+
+                // Пересчёт сдвига в днях, целевой койки и положения «тени».
+                update() {
+                    // Сдвиг указателя плюс прокрутка сетки с начала перетаскивания.
+                    const dx = drag.x - drag.startX + drag.scroller.scrollLeft - drag.startScroll;
+                    let deltaDays = Math.round(dx / drag.dayWidth);
+                    let row = drag.row;
+
+                    if (drag.mode === 'resize') {
+                        // Не короче одной ночи.
+                        deltaDays = Math.max(deltaDays, 1 - nights(drag.dateFrom, drag.dateTo));
+                    } else {
+                        const hit = document.elementsFromPoint(drag.x, drag.y).find((el) => el.matches('[data-bed-id]'));
+                        row = hit ?? drag.row;
+                    }
+
+                    drag.deltaDays = deltaDays;
+                    drag.targetBedId = Number(row.dataset.bedId);
+
+                    const shift = deltaDays * drag.dayWidth;
+                    const top = row.getBoundingClientRect().top - this.$refs.grid.getBoundingClientRect().top + drag.top;
+
+                    drag.ghost.style.top = top + 'px';
+                    drag.ghost.style.left = (drag.mode === 'move' ? drag.left + shift : drag.left) + 'px';
+                    drag.ghost.style.width = Math.max(0, drag.mode === 'resize' ? drag.width + shift : drag.width) + 'px';
+                },
+
+                // Пока указатель у левого или правого края видимой области, сетка прокручивается каждый кадр.
+                autoScroll() {
+                    if (drag === null || ! drag.active) {
+                        return;
+                    }
+
+                    const scroller = drag.scroller;
+                    const rect = scroller.getBoundingClientRect();
+                    // Слева видимую область дней закрывает закреплённая колонка коек.
+                    const left = rect.left + cssPx(scroller, '--sch-label-w');
+                    let step = 0;
+
+                    if (drag.x < left + EDGE) {
+                        step = -SCROLL_STEP;
+                    } else if (drag.x > rect.right - EDGE) {
+                        step = SCROLL_STEP;
+                    }
+
+                    if (step !== 0) {
+                        const before = scroller.scrollLeft;
+
+                        scroller.scrollLeft += step;
+
+                        if (scroller.scrollLeft !== before) {
+                            this.update();
+                        }
+                    }
+
+                    drag.frame = requestAnimationFrame(() => this.autoScroll());
+                },
+
+                // Останавливает автопрокрутку.
+                stop(state) {
+                    state.active = false;
+                    cancelAnimationFrame(state.frame);
+                },
+
+                // Убирает «тень» и временные классы; полосу на верное место ставит перерисовка Livewire.
+                clear(state) {
+                    state.ghost?.remove();
+                    state.bar.classList.remove('sch-dragged');
+                    state.scroller.classList.remove('sch-dragging', 'sch-resizing');
+                },
+
+                // Гасит клик, который браузер может отправить после отпускания, чтобы клетка под указателем не открыла «Новое заселение».
+                swallowClick() {
+                    const block = (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                    };
+
+                    window.addEventListener('click', block, { capture: true, once: true });
+                    setTimeout(() => window.removeEventListener('click', block, { capture: true }), 0);
+                },
+            };
+        });
+    </script>
+    @endscript
 </x-filament-panels::page>

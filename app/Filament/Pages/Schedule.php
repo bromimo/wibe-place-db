@@ -17,17 +17,21 @@ use Filament\Support\Enums\Width;
 use Livewire\Attributes\Computed;
 use App\Filament\Schemas\StayForm;
 use Illuminate\Support\Facades\DB;
+use App\Actions\Stay\MoveStayAction;
 use Filament\Support\Icons\Heroicon;
 use App\Actions\Stay\CreateStayAction;
 use App\Actions\Stay\DeleteStayAction;
+use App\Actions\Stay\ResizeStayAction;
 use App\Actions\Stay\UpdateStayAction;
 use App\Actions\Stay\CheckInStayAction;
+use App\Exceptions\StayLockedException;
 use App\Actions\Stay\CheckOutStayAction;
 use App\Exceptions\StayOverlapException;
 use Filament\Notifications\Notification;
 use App\Actions\Stay\SyncStayPaymentsAction;
 use App\Exceptions\InvalidStayDataException;
 use App\Http\Queries\Schedule\GetScheduleQuery;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /** График заселения: койки по дням с полосами заселений. */
 class Schedule extends Page
@@ -82,6 +86,46 @@ class Schedule extends Page
     public function schedule(): array
     {
         return app(GetScheduleQuery::class)($this->selectedDate()->subDay(), self::WINDOW_DAYS);
+    }
+
+    /** Переносит заселение перетаскиванием; аргументы приходят из браузера и проверяются здесь.
+     * @param mixed $stayId Id заселения.
+     * @param mixed $bedId Id целевой койки.
+     * @param mixed $dateFrom Новый день заезда Y-m-d.
+     * @return void
+     */
+    public function moveStay(mixed $stayId, mixed $bedId, mixed $dateFrom): void
+    {
+        $stay = $this->findStay(['stay' => $this->toId($stayId)]);
+        $bedId = $this->toId($bedId);
+        $dateFrom = is_string($dateFrom) ? $this->parseDate($dateFrom) : null;
+
+        if ($stay === null || $bedId === null || $dateFrom === null) {
+            $this->notifyDragFailed();
+
+            return;
+        }
+
+        $this->applyDrag(fn () => (new MoveStayAction())->run($stay, $bedId, $dateFrom));
+    }
+
+    /** Меняет день выезда перетаскиванием правого края; аргументы приходят из браузера и проверяются здесь.
+     * @param mixed $stayId Id заселения.
+     * @param mixed $dateTo Новый день выезда Y-m-d.
+     * @return void
+     */
+    public function resizeStay(mixed $stayId, mixed $dateTo): void
+    {
+        $stay = $this->findStay(['stay' => $this->toId($stayId)]);
+        $dateTo = is_string($dateTo) ? $this->parseDate($dateTo) : null;
+
+        if ($stay === null || $dateTo === null) {
+            $this->notifyDragFailed();
+
+            return;
+        }
+
+        $this->applyDrag(fn () => (new ResizeStayAction())->run($stay, $dateTo));
     }
 
     /** Окно «Новое заселение» для клетки койки; аргументы: bed_id и date (Y-m-d).
@@ -223,13 +267,11 @@ class Schedule extends Page
             return null;
         }
 
-        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $from = $this->parseDate($date);
 
-        if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+        if ($from === null) {
             return null;
         }
-
-        $from = CarbonImmutable::parse($date);
 
         return [
             'bed_id' => (int) $bedId,
@@ -299,6 +341,44 @@ class Schedule extends Page
         return $rows;
     }
 
+    /** Выполняет изменение от перетаскивания; ошибки предметной области превращает в уведомления.
+     * @param callable(): Stay $change Вызов действия переноса или растягивания.
+     * @return void
+     */
+    private function applyDrag(callable $change): void
+    {
+        try {
+            $change();
+        } catch (StayOverlapException|StayLockedException|InvalidStayDataException $e) {
+            Notification::make()->danger()->title($e->getMessage())->send();
+        } catch (ModelNotFoundException) {
+            $this->notifyDragFailed();
+        }
+
+        $this->refreshSchedule();
+    }
+
+    /** Целое положительное число из аргумента браузера.
+     * @param mixed $value Значение аргумента.
+     * @return int|null
+     */
+    private function toId(mixed $value): ?int
+    {
+        if (! is_int($value) && ! is_string($value)) {
+            return null;
+        }
+
+        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return $id === false ? null : $id;
+    }
+
+    /** Показывает уведомление о неудачном переносе. */
+    private function notifyDragFailed(): void
+    {
+        Notification::make()->danger()->title('Не удалось перенести заселение')->send();
+    }
+
     /** Показывает уведомление о том, что заселение не найдено. */
     private function notifyStayMissing(): void
     {
@@ -318,12 +398,21 @@ class Schedule extends Page
      */
     private function selectedDate(): CarbonImmutable
     {
-        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $this->date);
+        return $this->parseDate($this->date) ?? today()->toImmutable();
+    }
 
-        if ($parsed === false || $parsed->format('Y-m-d') !== $this->date) {
-            return today()->toImmutable();
+    /** Строгий разбор даты в формате Y-m-d.
+     * @param string $value Строка даты.
+     * @return CarbonImmutable|null
+     */
+    private function parseDate(string $value): ?CarbonImmutable
+    {
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+
+        if ($parsed === false || $parsed->format('Y-m-d') !== $value) {
+            return null;
         }
 
-        return CarbonImmutable::parse($this->date);
+        return CarbonImmutable::parse($value);
     }
 }

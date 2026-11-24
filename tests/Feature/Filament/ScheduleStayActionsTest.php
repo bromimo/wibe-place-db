@@ -261,7 +261,7 @@ class ScheduleStayActionsTest extends TestCase
         $this->assertSame(300, (int) $stay->payments()->sum('amount'));
     }
 
-    /** Клетка койки открывает новое заселение, полоса — правку. */
+    /** Клетка койки открывает новое заселение; нажатия на полосу обрабатывает компонент перетаскивания. */
     public function test_cells_and_bars_mount_actions(): void
     {
         $bed = $this->makeBed();
@@ -269,7 +269,9 @@ class ScheduleStayActionsTest extends TestCase
 
         Livewire::test(Schedule::class)
             ->assertSeeHtml("mountAction('createStay', { bed_id: {$bed->id}, date: '2026-11-25' })")
-            ->assertSeeHtml("wire:click.stop=\"mountAction('editStay', { stay: {$stay->id} })\"");
+            ->assertSeeHtml('x-data="scheduleDrag"')
+            ->assertSeeHtml('data-stay-id="' . $stay->id . '"')
+            ->assertDontSeeHtml('wire:click.stop');
     }
 
     /** Оплаты: добавленная строка создаётся, убранная удаляется. */
@@ -297,6 +299,31 @@ class ScheduleStayActionsTest extends TestCase
         $this->assertCount(1, $payments);
         $this->assertSame(500, $payments->first()->amount);
         $this->assertSame($stay->id, $payments->first()->stay_id);
+    }
+
+    /** После замены оплаты в окне правки полоса показывает новую сумму оплаты и долг. */
+    public function test_edit_payments_refresh_bar_amounts(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-27');
+        Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 1000]);
+
+        $undoFake = Repeater::fake();
+
+        $this->editStay($stay)
+            ->assertSeeHtml('<span class="sch-paid">1000</span>')
+            ->assertSeeHtml('<span class="sch-debt">380</span>')
+            ->callAction(TestAction::make('add')->schemaComponent('payments'))
+            ->setActionData(['payments.1.amount' => 1380])
+            ->callAction(TestAction::make('delete')->schemaComponent('payments')->arguments(['item' => 0]))
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertSeeHtml('<span class="sch-paid">1380</span>')
+            ->assertDontSeeHtml('class="sch-debt"');
+
+        $undoFake();
+
+        $this->assertSame(1380, (int) $stay->payments()->sum('amount'));
     }
 
     /** «Заселить» переводит бронь в проживание; у проживающего кнопки нет. */
