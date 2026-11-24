@@ -21,8 +21,7 @@
 .worktrees/
 .DS_Store
 Thumbs.db
-/.superpowers/*
-!/.superpowers/test/
+/.superpowers
 
 /node_modules
 /public/build

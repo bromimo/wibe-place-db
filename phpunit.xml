@@ -7,11 +7,9 @@
     <testsuites>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
-            <directory>.superpowers/test/Unit</directory>
         </testsuite>
         <testsuite name="Feature">
             <directory>tests/Feature</directory>
-            <directory>.superpowers/test/Feature</directory>
         </testsuite>
     </testsuites>
     <source>
