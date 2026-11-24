@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\StayStatus;
 use App\Enums\StayTariff;
+use Carbon\CarbonImmutable;
 use App\Abstracts\Models\AbstractModel;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -58,5 +59,64 @@ class Stay extends AbstractModel
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    /** Число ночей между датой заезда и датой выезда по календарным датам.
+     * @return int
+     */
+    public function nights(): int
+    {
+        $from = CarbonImmutable::parse($this->date_from->toDateString(), 'UTC');
+        $to = CarbonImmutable::parse($this->date_to->toDateString(), 'UTC');
+
+        return (int) $from->diffInDays($to);
+    }
+
+    /** Стоимость проживания в гривнах.
+     * @return int
+     */
+    public function cost(): int
+    {
+        if ($this->tariff === StayTariff::Manual) {
+            return (int) $this->manual_total;
+        }
+
+        return $this->nights() * (int) $this->price_per_night;
+    }
+
+    /** Сумма оплат; использует предзагруженный payments_sum_amount, если он есть.
+     * @return int
+     */
+    public function paid(): int
+    {
+        if (array_key_exists('payments_sum_amount', $this->attributes)) {
+            return (int) $this->attributes['payments_sum_amount'];
+        }
+
+        return (int) $this->payments()->sum('amount');
+    }
+
+    /** Долг по заселению, не меньше нуля.
+     * @return int
+     */
+    public function debt(): int
+    {
+        return max(0, $this->cost() - $this->paid());
+    }
+
+    /** Проживающий гость, у которого дата выезда уже прошла.
+     * @return bool
+     */
+    public function isOverdue(): bool
+    {
+        return $this->status === StayStatus::Living && $this->date_to->lt(today());
+    }
+
+    /** Фактическая дата выезда: для просроченного заселения завтрашний день.
+     * @return CarbonImmutable
+     */
+    public function effectiveDateTo(): CarbonImmutable
+    {
+        return $this->isOverdue() ? today()->addDay()->toImmutable() : $this->date_to;
     }
 }
