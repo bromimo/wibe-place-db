@@ -157,6 +157,49 @@ class SchedulePageTest extends TestCase
         Livewire::test(Schedule::class)->assertSeeHtml('sch-overdue');
     }
 
+    /** Просроченное, закончившееся до окна: хвост подписан гостем и долгом и открывает заселение. */
+    public function test_overdue_before_window_tail_identifies_stay(): void
+    {
+        $this->login();
+        $bed = $this->makeBed();
+        $user = User::factory()->create(['last_name' => 'Безуглый', 'first_name' => 'Максим']);
+        $stay = Stay::factory()->create([
+            'bed_id' => $bed->id,
+            'user_id' => $user->id,
+            'date_from' => '2026-11-18',
+            'date_to' => '2026-11-22',
+            'status' => StayStatus::Living,
+            'price_per_night' => 460,
+        ]);
+        Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 1000]);
+
+        $html = Livewire::test(Schedule::class)->html();
+
+        $this->assertMatchesRegularExpression(
+            '/<div[^>]*class="sch-overdue[^"]*"[^>]*data-stay-id="' . $stay->id . '"[^>]*data-draggable="0"/s',
+            $html,
+        );
+        $this->assertStringContainsString('Безуглый Максим', $html);
+        $this->assertStringContainsString('<span class="sch-debt">840</span>', $html);
+        $this->assertStringNotContainsString('wire:key="stay-' . $stay->id . '"', $html);
+    }
+
+    /** Просроченное, выехавшее вчера (первый день окна): обычная полоса прежняя, хвост тоже открывает заселение, но без подписи. */
+    public function test_overdue_inside_window_keeps_bar_contract(): void
+    {
+        $this->login();
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-20', '2026-11-25');
+        $this->travelTo('2026-11-26 12:00');
+
+        $html = Livewire::test(Schedule::class)->html();
+
+        $this->assertStringContainsString('wire:key="stay-' . $stay->id . '"', $html);
+        $this->assertStringContainsString('wire:key="overdue-' . $stay->id . '"', $html);
+        $this->assertSame(2, substr_count($html, 'data-stay-id="' . $stay->id . '"'));
+        $this->assertSame(1, substr_count($html, 'class="sch-guest"'));
+    }
+
     /** Без комнат — подсказка со ссылкой на справочник. */
     public function test_empty_hostel_shows_hint(): void
     {

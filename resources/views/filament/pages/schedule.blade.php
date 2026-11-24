@@ -97,7 +97,13 @@
         .sch-overdue {
             position: absolute; top: 5px; height: calc(var(--sch-row-h) - 10px); z-index: 0;
             background: repeating-linear-gradient(45deg, rgba(220, 38, 38, .55) 0 5px, rgba(220, 38, 38, .12) 5px 10px);
+            cursor: pointer; touch-action: none;
         }
+        .sch-overdue-labeled {
+            display: flex; align-items: center; gap: .375rem;
+            padding: 0 .375rem; box-sizing: border-box; overflow: hidden; white-space: nowrap;
+        }
+        .sch-overdue-labeled .sch-guest { padding: 0 .3rem; border-radius: .25rem; background: #fff; color: #7f1d1d; line-height: 1.25rem; }
 
         .sch-today-line {
             position: absolute; top: 0; bottom: 0; z-index: 2; width: 2px; margin-left: -1px;
@@ -210,16 +216,38 @@
                                         @endforeach
 
                                         @foreach ($bed['stays'] as $stay)
+                                            @php
+                                                $barDrawn = $stay['end'] > $stay['start'];
+                                                $stayTitle = collect([
+                                                    $stay['guest'],
+                                                    CarbonImmutable::parse($stay['date_from'])->format('d.m.Y') . ' — ' . CarbonImmutable::parse($stay['date_to'])->format('d.m.Y'),
+                                                    StayStatus::from($stay['status'])->label(),
+                                                    "Оплачено: {$stay['paid']}, долг: {$stay['debt']}",
+                                                ])->map(fn (string $line): string => e($line))->implode('&#10;');
+                                            @endphp
+
                                             @if ($stay['overdue_end'] !== null && $stay['overdue_end'] > $stay['end'])
+                                                {{-- Хвост просрочки открывает заселение; если основная полоса за окном, он подписан сам. --}}
                                                 <div
-                                                    class="sch-overdue"
+                                                    @class(['sch-overdue', 'sch-overdue-labeled' => ! $barDrawn])
                                                     wire:key="overdue-{{ $stay['id'] }}"
                                                     style="left: calc({{ $stay['end'] }} * var(--sch-day-w)); width: calc({{ $stay['overdue_end'] - $stay['end'] }} * var(--sch-day-w));"
-                                                    title="Просрочено: не продлён и не выселен"
-                                                ></div>
+                                                    data-stay-id="{{ $stay['id'] }}"
+                                                    data-date-from="{{ $stay['date_from'] }}"
+                                                    data-date-to="{{ $stay['date_to'] }}"
+                                                    data-draggable="0"
+                                                    title="{!! $stayTitle !!}&#10;Просрочено: не продлён и не выселен"
+                                                >
+                                                    @unless ($barDrawn)
+                                                        <span class="sch-guest">{{ $stay['guest'] }}</span>
+                                                        @if ($stay['debt'] > 0)
+                                                            <span class="sch-debt">{{ $stay['debt'] }}</span>
+                                                        @endif
+                                                    @endunless
+                                                </div>
                                             @endif
 
-                                            @if ($stay['end'] > $stay['start'])
+                                            @if ($barDrawn)
                                                 <div
                                                     wire:key="stay-{{ $stay['id'] }}"
                                                     @class([
@@ -233,7 +261,7 @@
                                                     data-date-from="{{ $stay['date_from'] }}"
                                                     data-date-to="{{ $stay['date_to'] }}"
                                                     data-draggable="{{ $stay['draggable'] ? '1' : '0' }}"
-                                                    title="{{ $stay['guest'] }}&#10;{{ CarbonImmutable::parse($stay['date_from'])->format('d.m.Y') }} — {{ CarbonImmutable::parse($stay['date_to'])->format('d.m.Y') }}&#10;{{ StayStatus::from($stay['status'])->label() }}&#10;Оплачено: {{ $stay['paid'] }}, долг: {{ $stay['debt'] }}"
+                                                    title="{!! $stayTitle !!}"
                                                 >
                                                     <span class="sch-guest">{{ $stay['guest'] }}</span>
                                                     <span class="sch-paid">{{ $stay['paid'] }}</span>
