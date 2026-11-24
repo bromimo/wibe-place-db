@@ -88,6 +88,10 @@ class StayForm
                     ->inputMode('numeric')
                     ->placeholder(fn (Get $get): ?string => self::debtPlaceholder($get, $stay))
                     ->dehydrated(false)
+                    // Enter в поле суммы принимает оплату (нажимает «Оплата»), а не сохраняет и закрывает окно.
+                    ->extraInputAttributes([
+                        'x-on:keydown.enter.prevent.stop' => "let n = \$el; while (n && ! n.querySelector('.sch-pay-btn')) { n = n.parentElement } n?.querySelector('.sch-pay-btn')?.click()",
+                    ])
                     ->afterContent($takePayment),
             ]),
             Actions::make([

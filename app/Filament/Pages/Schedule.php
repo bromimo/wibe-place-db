@@ -265,7 +265,7 @@ class Schedule extends Page
             ->label('Оплата')
             ->button()
             ->color('success')
-            ->extraAttributes(['class' => 'sch-btn-indigo'])
+            ->extraAttributes(['class' => 'sch-btn-indigo sch-pay-btn'])
             ->action(function (Get $get, Set $set) use ($stay): void {
                 $amount = filter_var($get('quick_payment'), FILTER_VALIDATE_INT);
 
