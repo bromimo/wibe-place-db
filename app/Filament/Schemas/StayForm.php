@@ -14,6 +14,8 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 use Filament\Actions\Action;
+use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\HtmlString;
 use Filament\Support\Icons\Heroicon;
 use Filament\Forms\Components\Hidden;
@@ -30,6 +32,7 @@ use Filament\Forms\Components\DatePicker;
 use App\Actions\Stay\ResolveStayPriceAction;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
+use App\Filament\Resources\Users\Schemas\UserForm;
 
 /** Поля и раскладка окна заселения на графике. */
 class StayForm
@@ -71,6 +74,7 @@ class StayForm
         return [
             Html::make(fn (Get $get): HtmlString => self::guestHtml($get('user_id')))->key('guestRow'),
             Html::make(fn (Get $get): HtmlString => self::docsHtml($get('user_id')))->key('docsRow'),
+            GuestDocs::uploadGroup(),
             self::datesRow($stay),
             self::tariffRow($stay),
             Html::make(fn (Get $get): HtmlString => self::moneyHtml($get, $stay))->key('moneyRow'),
@@ -216,23 +220,11 @@ class StayForm
             ->registerActions([GuestCard::action()])
             ->afterStateUpdated(fn (Select $component, mixed $state, mixed $old) => GuestCard::open($component, $state, $old))
             ->createOptionModalHeading('Новый клиент')
-            ->createOptionForm([
-                TextInput::make('last_name')
-                    ->label('Фамилия')
-                    ->maxLength(255)
-                    ->required(),
-                TextInput::make('first_name')
-                    ->label('Имя')
-                    ->maxLength(255)
-                    ->required(),
-                TextInput::make('phone')
-                    ->label('Телефон')
-                    ->tel()
-                    ->maxLength(64)
-                    ->validationMessages([
-                        'regex' => 'Введите номер телефона',
-                    ]),
-            ])
+            ->createOptionForm(fn (Schema $schema): Schema => UserForm::configure($schema))
+            ->createOptionAction(fn (Action $action): Action => $action
+                ->modalWidth(Width::FourExtraLarge)
+                ->modalSubmitActionLabel('Создать')
+                ->modalCancelActionLabel('Отмена'))
             ->createOptionUsing(fn (array $data): int => User::query()->create($data)->id);
     }
 
