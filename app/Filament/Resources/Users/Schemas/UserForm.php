@@ -7,8 +7,13 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\FileUpload;
 
+/** Форма клиента: раздел «Клиенты» и окно «Новый клиент» на графике. */
 class UserForm
 {
+    /** Раскладка формы клиента в три колонки.
+     * @param Schema $schema Схема формы.
+     * @return Schema
+     */
     public static function configure(Schema $schema): Schema
     {
         return $schema
@@ -32,12 +37,21 @@ class UserForm
                 Textarea::make('notes')
                         ->label('Особые приметы')
                         ->columnSpanFull(),
-                FileUpload::make('docs')
-                          ->label('Документы')
-                          ->columnSpanFull()
-                          ->image()
-                          ->openable()
-                          ->downloadable(),
+                self::docsUpload('docs'),
             ]);
+    }
+
+    /** Поле загрузки фото документов клиента: одно изображение, общий диск и каталог загрузок.
+     * @param string $name Имя поля в форме.
+     * @return FileUpload
+     */
+    public static function docsUpload(string $name): FileUpload
+    {
+        return FileUpload::make($name)
+                         ->label('Документы')
+                         ->columnSpanFull()
+                         ->image()
+                         ->openable()
+                         ->downloadable();
     }
 }

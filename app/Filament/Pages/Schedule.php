@@ -1,0 +1,622 @@
+<?php
+
+namespace App\Filament\Pages;
+
+use BackedEnum;
+use App\Models\Bed;
+use App\Models\Stay;
+use App\Models\User;
+use DomainException;
+use DateTimeImmutable;
+use Filament\Pages\Page;
+use App\Dto\Stay\StayDto;
+use App\Enums\StayStatus;
+use App\Enums\StayTariff;
+use Carbon\CarbonImmutable;
+use Filament\Actions\Action;
+use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
+use Livewire\Attributes\Computed;
+use App\Filament\Schemas\StayForm;
+use Illuminate\Support\Facades\DB;
+use App\Actions\Stay\MoveStayAction;
+use Filament\Support\Icons\Heroicon;
+use Filament\Forms\Components\Select;
+use Filament\Schemas\Components\Html;
+use Filament\Support\Exceptions\Halt;
+use App\Actions\Stay\CreateStayAction;
+use App\Actions\Stay\DeleteStayAction;
+use App\Actions\Stay\ResizeStayAction;
+use App\Actions\Stay\UpdateStayAction;
+use App\Actions\Stay\CheckInStayAction;
+use App\Actions\Stay\CheckOutStayAction;
+use Filament\Notifications\Notification;
+use App\Actions\Stay\AddStayPaymentAction;
+use Illuminate\Contracts\Support\Htmlable;
+use App\Actions\Stay\SyncStayPaymentsAction;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
+use App\Http\Queries\Schedule\GetScheduleQuery;
+use App\Filament\Resources\Users\Schemas\UserForm;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+
+/** График заселения: койки по дням с полосами заселений. */
+class Schedule extends Page
+{
+    /** Число дней в окне графика. */
+    private const WINDOW_DAYS = 31;
+
+    /** Допустимые годы дат из браузера. */
+    private const MIN_YEAR = 2000;
+    private const MAX_YEAR = 2100;
+
+    /** Наибольший сдвиг выбранной даты за одно нажатие, в днях. */
+    private const MAX_SHIFT_DAYS = 366;
+
+    protected static ?string $title = 'График';
+    protected static ?string $navigationLabel = 'График';
+    protected static ?int $navigationSort = 1;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
+    protected string $view = 'filament.pages.schedule';
+    protected Width|string|null $maxContentWidth = Width::Full;
+
+    /** Выбранная дата Y-m-d; окно начинается за день до неё. */
+    public string $date = '';
+
+    /** @var array<int, Stay|null> Заселения, загруженные за запрос, по id. */
+    private array $loadedStays = [];
+
+    /** Ставит выбранной датой сегодняшний день. */
+    public function mount(): void
+    {
+        $this->goToday();
+    }
+
+    /** Сбрасывает некорректную дату на сегодня. */
+    public function updatedDate(): void
+    {
+        $this->date = $this->selectedDate()->toDateString();
+    }
+
+    /** Сдвигает выбранную дату; аргумент приходит из браузера, некорректный или больше года игнорируется.
+     * @param mixed $days Число дней, может быть отрицательным.
+     * @return void
+     */
+    public function shift(mixed $days): void
+    {
+        if (! is_int($days) && ! is_string($days)) {
+            return;
+        }
+
+        $days = filter_var($days, FILTER_VALIDATE_INT, ['options' => ['min_range' => -self::MAX_SHIFT_DAYS, 'max_range' => self::MAX_SHIFT_DAYS]]);
+
+        if ($days === false) {
+            return;
+        }
+
+        $this->date = $this->selectedDate()->addDays($days)->toDateString();
+    }
+
+    /** Возвращает выбранную дату на сегодня. */
+    public function goToday(): void
+    {
+        $this->date = today()->toDateString();
+    }
+
+    /** Данные окна графика.
+     * @return array<string, mixed>
+     */
+    #[Computed]
+    public function schedule(): array
+    {
+        return app(GetScheduleQuery::class)($this->selectedDate()->subDay(), self::WINDOW_DAYS);
+    }
+
+    /** Переносит заселение перетаскиванием; аргументы приходят из браузера и проверяются здесь.
+     * @param mixed $stayId Id заселения.
+     * @param mixed $bedId Id целевой койки.
+     * @param mixed $dateFrom Новый день заезда Y-m-d.
+     * @return void
+     */
+    public function moveStay(mixed $stayId, mixed $bedId, mixed $dateFrom): void
+    {
+        $stay = $this->findStay(['stay' => $this->toId($stayId)]);
+        $bedId = $this->toId($bedId);
+        $dateFrom = is_string($dateFrom) ? $this->parseDate($dateFrom) : null;
+
+        if ($stay === null || $bedId === null || $dateFrom === null) {
+            $this->notifyDragFailed();
+
+            return;
+        }
+
+        $this->applyDrag(fn () => (new MoveStayAction())->run($stay, $bedId, $dateFrom));
+    }
+
+    /** Меняет день выезда перетаскиванием правого края; аргументы приходят из браузера и проверяются здесь.
+     * @param mixed $stayId Id заселения.
+     * @param mixed $dateTo Новый день выезда Y-m-d.
+     * @return void
+     */
+    public function resizeStay(mixed $stayId, mixed $dateTo): void
+    {
+        $stay = $this->findStay(['stay' => $this->toId($stayId)]);
+        $dateTo = is_string($dateTo) ? $this->parseDate($dateTo) : null;
+
+        if ($stay === null || $dateTo === null) {
+            $this->notifyDragFailed();
+
+            return;
+        }
+
+        $this->applyDrag(fn () => (new ResizeStayAction())->run($stay, $dateTo));
+    }
+
+    /** Окно «Новое заселение» для клетки койки; аргументы: bed_id и date (Y-m-d).
+     * @return Action
+     */
+    public function createStayAction(): Action
+    {
+        return Action::make('createStay')
+            ->modalHeading('Новое заселение')
+            ->modalSubmitActionLabel('Создать')
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-green']))
+            ->modalCancelActionLabel('Отмена')
+            ->modalCancelAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-neutral']))
+            ->modalWidth(Width::TwoExtraLarge)
+            ->stickyModalHeader()
+            ->stickyModalFooter()
+            ->extraModalWindowAttributes(['class' => 'sch-stay-window'])
+            ->schema(StayForm::createComponents())
+            ->mountUsing(function (Action $action, ?Schema $schema, array $arguments): void {
+                $defaults = $this->createDefaults($arguments);
+
+                if ($defaults === null) {
+                    Notification::make()->danger()->title('Не удалось открыть форму заселения')->send();
+
+                    $action->cancel();
+                }
+
+                $schema?->fill($defaults);
+            })
+            ->action(function (Action $action, array $data): void {
+                try {
+                    (new CreateStayAction())->run($this->toDto($data));
+                } catch (DomainException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+
+                    $action->halt();
+                }
+
+                $this->refreshSchedule();
+            });
+    }
+
+    /** Окно правки заселения с оплатами, быстрой оплатой и кнопками смены состояния; аргумент: stay (id).
+     * @return Action
+     */
+    public function editStayAction(): Action
+    {
+        return Action::make('editStay')
+            ->modalHeading(fn (array $arguments): ?Htmlable => ($stay = $this->findStay($arguments)) ? StayForm::editHeading($stay) : null)
+            // Без автофокуса: иначе при открытии фокус встаёт на карандаш у имени гостя и висит его подсказка.
+            ->modalAutofocus(false)
+            ->modalSubmitActionLabel('Сохранить изменения')
+            ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-stay-submit sch-btn-green']))
+            ->modalCancelActionLabel('Закрыть')
+            ->modalCancelAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-btn-neutral']))
+            ->modalWidth(Width::TwoExtraLarge)
+            ->stickyModalHeader()
+            ->stickyModalFooter()
+            ->extraModalWindowAttributes(['class' => 'sch-stay-window sch-stay-edit'])
+            ->registerModalActions([fn (array $arguments): array => $this->stayStateActions($this->findStay($arguments))])
+            ->schema(fn (array $arguments, Action $action): array => ($stay = $this->findStay($arguments)) === null ? [] : StayForm::editComponents(
+                $stay,
+                $this->takePaymentAction($stay),
+                $this->editGuestAction(),
+                [$action->getModalAction('checkIn'), $action->getModalAction('checkOut')],
+            ))
+            ->mountUsing(function (Action $action, ?Schema $schema, array $arguments): void {
+                $stay = $this->findStay($arguments);
+
+                if ($stay === null) {
+                    $this->notifyStayMissing();
+
+                    $action->cancel();
+                }
+
+                $schema?->fill(StayForm::fillFromStay($stay));
+            })
+            ->action(function (Action $action, array $data, array $arguments): void {
+                $stay = $this->findStay($arguments);
+
+                if ($stay === null) {
+                    $this->notifyStayMissing();
+                    $this->refreshSchedule();
+
+                    return;
+                }
+
+                try {
+                    DB::transaction(function () use ($stay, $data): void {
+                        (new UpdateStayAction())->run($stay, $this->toDto($data));
+                        (new SyncStayPaymentsAction())->run($stay, $this->paymentRows($data), $this->openedPaymentIds($data));
+                    });
+                } catch (DomainException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+
+                    $action->halt();
+                } catch (ModelNotFoundException) {
+                    $this->notifyStayMissing();
+                }
+
+                $this->refreshSchedule();
+            })
+            ->extraModalFooterActions(fn (array $arguments): array => [$this->deleteStayAction($this->findStay($arguments))]);
+    }
+
+    /** Кнопка «Оплата» окна правки: сразу записывает оплату на сегодня, окно и несохранённые правки остаются.
+     * @param Stay $stay Правимое заселение.
+     * @return Action
+     */
+    private function takePaymentAction(Stay $stay): Action
+    {
+        return Action::make('takePayment')
+            ->label('Оплата')
+            ->button()
+            ->color('success')
+            ->extraAttributes(['class' => 'sch-btn-indigo sch-pay-btn'])
+            ->action(function (Get $get, Set $set) use ($stay): void {
+                $amount = filter_var($get('quick_payment'), FILTER_VALIDATE_INT);
+
+                try {
+                    $payment = (new AddStayPaymentAction())->run($stay, $amount === false ? 0 : $amount);
+                } catch (DomainException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+
+                    return;
+                } catch (ModelNotFoundException) {
+                    $this->notifyStayMissing();
+                    $this->refreshSchedule();
+
+                    return;
+                }
+
+                StayForm::addPaymentToState($get, $set, $payment);
+
+                Notification::make()->success()->title('Оплата принята: ' . StayForm::hryvnias($payment->amount))->send();
+
+                // Действие поля перерисовывает только форму окна; полосе графика нужна полная перерисовка страницы.
+                $this->refreshSchedule();
+                $this->forceRender();
+            });
+    }
+
+    /** Карандаш «Редактировать клиента» в строке гостя окна правки: форма клиента поверх окна заселения.
+     * Правит гостя формы; после «Сохранить» окно заселения и полоса графика показывают свежие данные, несохранённые правки остаются.
+     * @return Action
+     */
+    private function editGuestAction(): Action
+    {
+        return Action::make('editGuest')
+            ->label('Редактировать клиента')
+            ->iconButton()
+            ->icon(Heroicon::OutlinedPencilSquare)
+            ->color('gray')
+            // Подсказка — обычный title браузера: всплывающая подсказка панели показывается и при фокусе,
+            // а фокус возвращается на карандаш после закрытия анкеты клиента.
+            ->extraAttributes([
+                'class' => 'sch-stay-guest-edit',
+                'title' => 'Редактировать клиента',
+                'aria-label' => 'Редактировать клиента',
+            ])
+            ->modalHeading(fn (Get $get): string => 'Клиент: ' . ($this->findGuest($get('user_id'))?->full_name ?? ''))
+            ->modalSubmitActionLabel('Сохранить')
+            ->modalCancelActionLabel('Отмена')
+            ->modalWidth(Width::FourExtraLarge)
+            ->schema(fn (Schema $schema, Get $get): Schema => UserForm::configure($schema->record($this->findGuest($get('user_id')))))
+            ->fillForm(fn (Get $get): array => $this->findGuest($get('user_id'))?->attributesToArray() ?? [])
+            ->action(function (array $data, Get $get, Html $component): void {
+                $guest = $this->findGuest($get('user_id'));
+
+                if ($guest === null) {
+                    return;
+                }
+
+                $guest->update($data);
+
+                $guestSelect = $component->getRootContainer()->getComponent(
+                    fn (mixed $field): bool => $field instanceof Select && $field->getName() === 'user_id',
+                    withHidden: true,
+                );
+
+                if ($guestSelect instanceof Select) {
+                    $guestSelect->refreshSelectedOptionLabel();
+                }
+
+                Notification::make()->success()->title('Клиент сохранён')->send();
+
+                // Действие перерисовывает только окна; имени гостя на полосе графика нужна полная перерисовка страницы.
+                $this->refreshSchedule();
+                $this->forceRender();
+            });
+    }
+
+    /** Гость по id из формы; некорректный или несуществующий id даёт null.
+     * @param mixed $id Id гостя.
+     * @return User|null
+     */
+    private function findGuest(mixed $id): ?User
+    {
+        $id = $this->toId($id);
+
+        return $id === null ? null : User::query()->find($id);
+    }
+
+    /** Кнопки смены состояния в окне правки: заселить, выезд.
+     * @param Stay|null $stay Правимое заселение.
+     * @return array<int, Action>
+     */
+    private function stayStateActions(?Stay $stay): array
+    {
+        return [
+            Action::make('checkIn')
+                ->label('Заселить')
+                ->color('success')
+                ->extraAttributes(['class' => 'sch-btn-neutral'])
+                ->visible($stay?->status === StayStatus::Booked)
+                ->cancelParentActions()
+                ->action(function (Action $action) use ($stay): void {
+                    $this->applyFooterChange($action, fn () => (new CheckInStayAction())->run($stay));
+                }),
+            Action::make('checkOut')
+                ->label('Выезд')
+                ->color('warning')
+                ->extraAttributes(['class' => 'sch-btn-neutral'])
+                ->visible($stay?->status === StayStatus::Living)
+                ->requiresConfirmation()
+                ->modalHeading('Выселить гостя?')
+                ->cancelParentActions()
+                ->action(function (Action $action) use ($stay): void {
+                    $checkOut = new CheckOutStayAction();
+
+                    $this->applyFooterChange($action, fn () => $checkOut->run($stay));
+
+                    if ($checkOut->clippedTo() !== null) {
+                        Notification::make()
+                            ->warning()
+                            ->title('Выезд ограничен началом следующего заселения: ' . $checkOut->clippedTo()->format('d.m'))
+                            ->send();
+                    }
+                }),
+        ];
+    }
+
+    /** Кнопка «Удалить» в подвале окна правки, слева от остальных.
+     * @param Stay|null $stay Правимое заселение.
+     * @return Action
+     */
+    private function deleteStayAction(?Stay $stay): Action
+    {
+        return Action::make('delete')
+            ->label('Удалить')
+            ->color('danger')
+            ->visible($stay !== null)
+            ->requiresConfirmation()
+            ->modalHeading('Удалить заселение?')
+            ->modalDescription('Заселение и его оплаты будут удалены')
+            ->extraAttributes(['class' => 'sch-stay-delete'])
+            ->cancelParentActions()
+            ->action(function (Action $action) use ($stay): void {
+                $this->applyFooterChange($action, fn () => (new DeleteStayAction())->run($stay));
+            });
+    }
+
+    /** Выполняет вложенное действие окна правки (смена состояния, удаление). Ошибка предметной области: уведомление, закрывается только
+     * само действие, окно правки остаётся открытым. Пропавшее заселение: уведомление, окна закрываются.
+     * @param Action $action Вложенное действие.
+     * @param callable(): mixed $change Вызов действия над заселением.
+     * @throws Halt
+     * @return void
+     */
+    private function applyFooterChange(Action $action, callable $change): void
+    {
+        try {
+            $change();
+        } catch (DomainException $e) {
+            Notification::make()->danger()->title($e->getMessage())->send();
+
+            $this->refreshSchedule();
+            $this->unmountAction(canCancelParentActions: false);
+
+            $action->halt();
+        } catch (ModelNotFoundException) {
+            $this->notifyStayMissing();
+        }
+
+        $this->refreshSchedule();
+    }
+
+    /** Значения новой формы по клетке: койка, заезд, выезд на следующий день, состояние по дате.
+     * @param array<string, mixed> $arguments Аргументы действия: bed_id и date.
+     * @return array<string, mixed>|null
+     */
+    private function createDefaults(array $arguments): ?array
+    {
+        $date = $arguments['date'] ?? null;
+        $bedId = $arguments['bed_id'] ?? null;
+
+        if (! is_string($date) || ! is_numeric($bedId) || ! Bed::query()->whereKey((int) $bedId)->exists()) {
+            return null;
+        }
+
+        $from = $this->parseDate($date);
+
+        if ($from === null) {
+            return null;
+        }
+
+        return [
+            'bed_id' => (int) $bedId,
+            'date_from' => $from->toDateString(),
+            'date_to' => $from->addDay()->toDateString(),
+            'status' => ($from->lte(today()) ? StayStatus::Living : StayStatus::Booked)->value,
+            'tariff' => StayTariff::Standard->value,
+        ];
+    }
+
+    /** Заселение из аргументов действия; загружается один раз за запрос.
+     * @param array<string, mixed> $arguments Аргументы действия: stay.
+     * @return Stay|null
+     */
+    private function findStay(array $arguments): ?Stay
+    {
+        $id = $arguments['stay'] ?? null;
+
+        if (! is_numeric($id)) {
+            return null;
+        }
+
+        $id = (int) $id;
+
+        if (! array_key_exists($id, $this->loadedStays)) {
+            $this->loadedStays[$id] = Stay::query()->with(['user', 'bed'])->find($id);
+        }
+
+        return $this->loadedStays[$id];
+    }
+
+    /** DTO заселения из данных формы.
+     * @param array<string, mixed> $data Данные формы.
+     * @return StayDto
+     */
+    private function toDto(array $data): StayDto
+    {
+        return StayDto::from([
+            'bed_id' => (int) $data['bed_id'],
+            'user_id' => (int) $data['user_id'],
+            'date_from' => $data['date_from'],
+            'date_to' => $data['date_to'],
+            'status' => $data['status'],
+            'tariff' => $data['tariff'],
+            'manual_total' => filled($data['manual_total'] ?? null) ? (int) $data['manual_total'] : null,
+            'notes' => filled($data['notes'] ?? null) ? $data['notes'] : null,
+        ]);
+    }
+
+    /** Строки оплат для синхронизации из repeater.
+     * @param array<string, mixed> $data Данные формы.
+     * @return array<int, array{id: int|null, amount: int, paid_at: string, note: string|null}>
+     */
+    private function paymentRows(array $data): array
+    {
+        $rows = [];
+
+        foreach (array_values($data['payments'] ?? []) as $row) {
+            $rows[] = [
+                'id' => filled($row['id'] ?? null) ? (int) $row['id'] : null,
+                'amount' => (int) $row['amount'],
+                'paid_at' => (string) $row['paid_at'],
+                'note' => filled($row['note'] ?? null) ? $row['note'] : null,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /** Id оплат, бывших в форме правки при её открытии; нечисловые значения отбрасываются.
+     * @param array<string, mixed> $data Данные формы.
+     * @return array<int, int>
+     */
+    private function openedPaymentIds(array $data): array
+    {
+        $ids = $data['opened_payment_ids'] ?? [];
+
+        if (! is_array($ids)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(fn (mixed $id): ?int => $this->toId($id), $ids)));
+    }
+
+    /** Выполняет изменение от перетаскивания; ошибки предметной области превращает в уведомления.
+     * @param callable(): Stay $change Вызов действия переноса или растягивания.
+     * @return void
+     */
+    private function applyDrag(callable $change): void
+    {
+        try {
+            $change();
+        } catch (DomainException $e) {
+            Notification::make()->danger()->title($e->getMessage())->send();
+        } catch (ModelNotFoundException) {
+            $this->notifyDragFailed();
+        }
+
+        $this->refreshSchedule();
+    }
+
+    /** Целое положительное число из аргумента браузера.
+     * @param mixed $value Значение аргумента.
+     * @return int|null
+     */
+    private function toId(mixed $value): ?int
+    {
+        if (! is_int($value) && ! is_string($value)) {
+            return null;
+        }
+
+        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return $id === false ? null : $id;
+    }
+
+    /** Показывает уведомление о неудачном переносе. */
+    private function notifyDragFailed(): void
+    {
+        Notification::make()->danger()->title('Не удалось перенести заселение')->send();
+    }
+
+    /** Показывает уведомление о том, что заселение не найдено. */
+    private function notifyStayMissing(): void
+    {
+        Notification::make()->danger()->title('Заселение не найдено')->send();
+    }
+
+    /** Сбрасывает закэшированные за запрос данные, чтобы сетка показала свежее состояние. */
+    private function refreshSchedule(): void
+    {
+        $this->loadedStays = [];
+
+        unset($this->schedule);
+    }
+
+    /** Выбранная дата; при некорректном значении — сегодня.
+     * @return CarbonImmutable
+     */
+    private function selectedDate(): CarbonImmutable
+    {
+        return $this->parseDate($this->date) ?? today()->toImmutable();
+    }
+
+    /** Строгий разбор даты в формате Y-m-d; годы вне 2000–2100 отклоняются, чтобы не дойти до БД.
+     * @param string $value Строка даты.
+     * @return CarbonImmutable|null
+     */
+    private function parseDate(string $value): ?CarbonImmutable
+    {
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+
+        if ($parsed === false || $parsed->format('Y-m-d') !== $value) {
+            return null;
+        }
+
+        $year = (int) $parsed->format('Y');
+
+        if ($year < self::MIN_YEAR || $year > self::MAX_YEAR) {
+            return null;
+        }
+
+        return CarbonImmutable::parse($value);
+    }
+}

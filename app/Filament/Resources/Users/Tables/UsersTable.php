@@ -2,17 +2,21 @@
 
 namespace App\Filament\Resources\Users\Tables;
 
+use App\Models\User;
 use Filament\Tables\Table;
 use Filament\Actions\EditAction;
+use Illuminate\Support\Collection;
 use Filament\Tables\Filters\Filter;
 use Filament\Actions\BulkActionGroup;
 use Filament\Forms\Components\Select;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Tables\Filters\Indicator;
-use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\IconColumn;
+use Filament\Tables\Columns\TextColumn;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Tables\Enums\FiltersLayout;
+use App\Exceptions\UserHasStaysException;
 
 class UsersTable
 {
@@ -156,7 +160,17 @@ class UsersTable
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
-                    DeleteBulkAction::make(),
+                    DeleteBulkAction::make()
+                        ->using(function (DeleteBulkAction $action, Collection $records): void {
+                            $records->each(function (User $record) use ($action): void {
+                                try {
+                                    $record->delete() || $action->reportBulkProcessingFailure();
+                                } catch (UserHasStaysException $e) {
+                                    $action->reportBulkProcessingFailure($e::class, $e->getMessage());
+                                }
+                            });
+                        })
+                        ->failureNotification(fn (Notification $notification): Notification => $notification->danger()),
                 ]),
             ]);
     }
