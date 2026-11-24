@@ -199,6 +199,8 @@ class Schedule extends Page
     {
         return Action::make('editStay')
             ->modalHeading(fn (array $arguments): ?Htmlable => ($stay = $this->findStay($arguments)) ? StayForm::editHeading($stay) : null)
+            // Без автофокуса: иначе при открытии фокус встаёт на карандаш у имени гостя и висит его подсказка.
+            ->modalAutofocus(false)
             ->modalSubmitActionLabel('Сохранить изменения')
             ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['class' => 'sch-stay-submit sch-btn-green']))
             ->modalCancelActionLabel('Закрыть')
@@ -298,11 +300,16 @@ class Schedule extends Page
     {
         return Action::make('editGuest')
             ->label('Редактировать клиента')
-            ->tooltip('Редактировать клиента')
             ->iconButton()
             ->icon(Heroicon::OutlinedPencilSquare)
             ->color('gray')
-            ->extraAttributes(['class' => 'sch-stay-guest-edit', 'aria-label' => 'Редактировать клиента'])
+            // Подсказка — обычный title браузера: всплывающая подсказка панели показывается и при фокусе,
+            // а фокус возвращается на карандаш после закрытия анкеты клиента.
+            ->extraAttributes([
+                'class' => 'sch-stay-guest-edit',
+                'title' => 'Редактировать клиента',
+                'aria-label' => 'Редактировать клиента',
+            ])
             ->modalHeading(fn (Get $get): string => 'Клиент: ' . ($this->findGuest($get('user_id'))?->full_name ?? ''))
             ->modalSubmitActionLabel('Сохранить')
             ->modalCancelActionLabel('Отмена')
