@@ -249,4 +249,51 @@ class CreateUpdateStayActionTest extends TestCase
 
         $action->run($dto);
     }
+
+    /** Правка с некорректными датами или ручным тарифом без суммы отклоняется, запись не меняется. */
+    public function test_update_rejects_invalid_data_and_keeps_record(): void
+    {
+        $stay = $this->create();
+        $cases = [
+            ['date_to' => '2026-11-24'],
+            ['date_to' => '2026-11-23'],
+            ['tariff' => 'manual', 'manual_total' => null],
+        ];
+
+        foreach ($cases as $overrides) {
+            try {
+                (new UpdateStayAction())->run($stay, $this->dto(['user_id' => $stay->user_id] + $overrides));
+                $this->fail('Ожидалось InvalidStayDataException');
+            } catch (InvalidStayDataException) {
+                $fresh = $stay->fresh();
+                $this->assertSame('2026-11-27', $fresh->date_to->toDateString());
+                $this->assertSame(StayTariff::Standard, $fresh->tariff);
+                $this->assertSame(460, $fresh->price_per_night);
+            }
+        }
+    }
+
+    /** Стандартный тариф с переданной ручной суммой хранит null. */
+    public function test_create_standard_ignores_supplied_manual_total(): void
+    {
+        $stay = $this->create(['manual_total' => 999]);
+
+        $this->assertNull($stay->fresh()->manual_total);
+    }
+
+    /** Смена стандартного тарифа на ручной обнуляет цену за ночь. */
+    public function test_update_standard_to_manual_clears_price(): void
+    {
+        $stay = $this->create();
+
+        (new UpdateStayAction())->run($stay, $this->dto([
+            'user_id' => $stay->user_id,
+            'tariff' => 'manual',
+            'manual_total' => 1500,
+        ]));
+
+        $fresh = $stay->fresh();
+        $this->assertNull($fresh->price_per_night);
+        $this->assertSame(1500, $fresh->manual_total);
+    }
 }
