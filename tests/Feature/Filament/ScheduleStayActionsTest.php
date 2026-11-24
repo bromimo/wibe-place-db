@@ -301,6 +301,24 @@ class ScheduleStayActionsTest extends TestCase
         $this->assertSame($stay->id, $payments->first()->stay_id);
     }
 
+    /** Оплата, внесённая другим администратором при открытом окне, после сохранения остаётся. */
+    public function test_edit_keeps_payment_added_meanwhile(): void
+    {
+        $bed = $this->makeBed();
+        $stay = $this->makeStay($bed, '2026-11-24', '2026-11-26');
+        $seen = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 300]);
+
+        $component = $this->editStay($stay)->setActionData(['notes' => 'Правка']);
+
+        $meanwhile = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 500]);
+
+        $component->callMountedAction()->assertHasNoActionErrors();
+
+        $this->assertNotNull($seen->fresh());
+        $this->assertNotNull($meanwhile->fresh());
+        $this->assertSame('Правка', $stay->refresh()->notes);
+    }
+
     /** После замены оплаты в окне правки полоса показывает новую сумму оплаты и долг. */
     public function test_edit_payments_refresh_bar_amounts(): void
     {

@@ -72,6 +72,7 @@ class StayForm
 
         return [
             ...$components,
+            Hidden::make('opened_payment_ids'),
             Repeater::make('payments')
                 ->label('Оплаты')
                 ->reorderable(false)
@@ -99,12 +100,14 @@ class StayForm
         ];
     }
 
-    /** Значения формы правки из заселения.
+    /** Значения формы правки из заселения; opened_payment_ids — оплаты, которые видит открытая форма.
      * @param Stay $stay Заселение.
      * @return array<string, mixed>
      */
     public static function fillFromStay(Stay $stay): array
     {
+        $payments = $stay->payments()->orderBy('paid_at')->orderBy('id')->get();
+
         return [
             'user_id' => $stay->user_id,
             'bed_id' => $stay->bed_id,
@@ -114,10 +117,8 @@ class StayForm
             'tariff' => $stay->tariff->value,
             'manual_total' => $stay->manual_total,
             'notes' => $stay->notes,
-            'payments' => $stay->payments()
-                ->orderBy('paid_at')
-                ->orderBy('id')
-                ->get()
+            'opened_payment_ids' => $payments->pluck('id')->all(),
+            'payments' => $payments
                 ->map(fn ($payment): array => [
                     'id' => $payment->id,
                     'amount' => $payment->amount,

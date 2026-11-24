@@ -247,12 +247,12 @@ class StayLifecycleActionsTest extends TestCase
     {
         $stay = $this->stay('2026-11-24', '2026-11-27');
         $a = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 100]);
-        Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 200]);
+        $b = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 200]);
 
         (new SyncStayPaymentsAction())->run($stay, [
             ['id' => $a->id, 'amount' => 150, 'paid_at' => '2026-11-25', 'note' => 'правка'],
             ['id' => null, 'amount' => 300, 'paid_at' => '2026-11-26', 'note' => null],
-        ]);
+        ], [$a->id, $b->id]);
 
         $payments = $stay->payments()->orderBy('id')->get();
         $this->assertCount(2, $payments);
@@ -273,13 +273,31 @@ class StayLifecycleActionsTest extends TestCase
             (new SyncStayPaymentsAction())->run($stay, [
                 ['id' => $a->id, 'amount' => 500, 'paid_at' => '2026-11-25', 'note' => null],
                 ['id' => null, 'amount' => 0, 'paid_at' => '2026-11-26', 'note' => null],
-            ]);
+            ], [$a->id]);
             $this->fail('Ожидалось InvalidStayDataException');
         } catch (InvalidStayDataException $e) {
             $this->assertSame('Сумма оплаты должна быть больше нуля', $e->getMessage());
             $this->assertSame(100, $a->fresh()->amount);
             $this->assertSame(1, $stay->payments()->count());
         }
+    }
+
+    /** Удаляются только оплаты, бывшие в форме при открытии; добавленная тем временем другим администратором остаётся. */
+    public function test_sync_payments_keeps_payment_added_meanwhile(): void
+    {
+        $stay = $this->stay('2026-11-24', '2026-11-27');
+        $opened = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 100]);
+        $removed = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 200]);
+        $meanwhile = Payment::factory()->create(['stay_id' => $stay->id, 'amount' => 300]);
+
+        (new SyncStayPaymentsAction())->run($stay, [
+            ['id' => $opened->id, 'amount' => 100, 'paid_at' => '2026-11-25', 'note' => null],
+        ], [$opened->id, $removed->id]);
+
+        $this->assertNotNull($opened->fresh());
+        $this->assertNull($removed->fresh());
+        $this->assertNotNull($meanwhile->fresh());
+        $this->assertSame(400, $stay->fresh()->paid());
     }
 
     /** Оплата другого заселения не затрагивается. */
@@ -290,7 +308,7 @@ class StayLifecycleActionsTest extends TestCase
 
         (new SyncStayPaymentsAction())->run($stay, [
             ['id' => $foreign->id, 'amount' => 1, 'paid_at' => '2026-11-25', 'note' => null],
-        ]);
+        ], [$foreign->id]);
 
         $this->assertSame(777, $foreign->fresh()->amount);
         $this->assertSame($foreign->stay_id, $foreign->fresh()->stay_id);

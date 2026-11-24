@@ -197,7 +197,7 @@ class Schedule extends Page
                 try {
                     DB::transaction(function () use ($stay, $data): void {
                         (new UpdateStayAction())->run($stay, $this->toDto($data));
-                        (new SyncStayPaymentsAction())->run($stay, $this->paymentRows($data));
+                        (new SyncStayPaymentsAction())->run($stay, $this->paymentRows($data), $this->openedPaymentIds($data));
                     });
                 } catch (DomainException $e) {
                     Notification::make()->danger()->title($e->getMessage())->send();
@@ -370,6 +370,21 @@ class Schedule extends Page
         }
 
         return $rows;
+    }
+
+    /** Id оплат, бывших в форме правки при её открытии; нечисловые значения отбрасываются.
+     * @param array<string, mixed> $data Данные формы.
+     * @return array<int, int>
+     */
+    private function openedPaymentIds(array $data): array
+    {
+        $ids = $data['opened_payment_ids'] ?? [];
+
+        if (! is_array($ids)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(fn (mixed $id): ?int => $this->toId($id), $ids)));
     }
 
     /** Выполняет изменение от перетаскивания; ошибки предметной области превращает в уведомления.

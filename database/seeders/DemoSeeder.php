@@ -141,6 +141,6 @@ class DemoSeeder extends Seeder
         $paidAt = $dateFrom->gt(today()) ? today()->toDateString() : $dateFrom->toDateString();
         $rows = array_map(fn (int $amount): array => ['id' => null, 'amount' => $amount, 'paid_at' => $paidAt, 'note' => null], $payments);
 
-        (new SyncStayPaymentsAction())->run($stay, $rows);
+        (new SyncStayPaymentsAction())->run($stay, $rows, []);
     }
 }
