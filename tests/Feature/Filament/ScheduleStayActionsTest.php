@@ -372,12 +372,42 @@ class ScheduleStayActionsTest extends TestCase
             ->setActionData(['user_id' => $guest->id])
             ->assertActionMounted($this->guestCard())
             ->assertMountedActionModalSee([
-                'Клиент', 'Фамилия', 'Шевченко', 'Имя', 'Тарас', 'Телефон', '+380501112233',
-                'Особые приметы', 'Шрам на левой руке', 'Документы', 'Заселений: 2', 'Отменить', 'Выбрать',
+                'Клиент', 'Особые приметы', 'Шрам на левой руке', 'Документы', 'Заселений: 2', 'Отменить', 'Выбрать',
             ])
-            ->assertMountedActionModalSeeHtml(['passport.png', 'target="_blank"']);
+            ->assertMountedActionModalSeeHtml([
+                'sch-stay-guest-name">Шевченко Тарас<',
+                'sch-stay-guest-phone">+380501112233<',
+                '<img class="sch-stay-docs-image" src="http://localhost/docs/passport.png?expiration=',
+                'target="_blank"',
+                'sch-guest-card-stays sch-guest-card-stays-active">Заселений: 2<',
+            ]);
 
         $this->assertNull($component->get('mountedActions.0.data.user_id'));
+    }
+
+    /** Окно «Клиент» оформлено как окно заселения: та же ширина, линии шапки и подвала,
+     * «Отменить» серой кнопкой слева от зелёной «Выбрать» у правого края, без автофокуса на кнопке.
+     */
+    public function test_client_card_looks_like_stay_window(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create();
+
+        $component = $this->createStay($bed)
+            ->setActionData(['user_id' => $guest->id])
+            ->assertActionMounted($this->guestCard());
+
+        $card = $component->instance()->getMountedAction();
+        $stay = $component->instance()->getMountedActions()[0];
+
+        $this->assertSame($stay->getModalWidth(), $card->getModalWidth());
+        $this->assertTrue($card->isModalHeaderSticky());
+        $this->assertTrue($card->isModalFooterSticky());
+        $this->assertFalse($card->isModalAutofocused());
+        $this->assertSame('sch-stay-window sch-guest-card', $card->getExtraModalWindowAttributes()['class'] ?? null);
+        $this->assertSame(['submit', 'cancel'], array_keys($card->getVisibleModalFooterActions()));
+        $this->assertSame('sch-stay-submit sch-btn-green', $card->getModalSubmitAction()->getExtraAttributes()['class'] ?? null);
+        $this->assertSame('sch-btn-neutral', $card->getModalCancelAction()->getExtraAttributes()['class'] ?? null);
     }
 
     /** Пустые телефон, приметы и документы показываются прочерком и «нет»; заселений 0. */
@@ -389,8 +419,26 @@ class ScheduleStayActionsTest extends TestCase
         $this->createStay($bed)
             ->setActionData(['user_id' => $guest->id])
             ->assertActionMounted($this->guestCard())
-            ->assertMountedActionModalSee(['—', 'нет', 'Заселений: 0'])
-            ->assertMountedActionModalDontSeeHtml('<img');
+            ->assertMountedActionModalSee(['Документы: нет', 'Заселений: 0'])
+            ->assertMountedActionModalSeeHtml([
+                'sch-stay-guest-phone">—<',
+                'sch-guest-card-notes">—<',
+                'class="sch-guest-card-stays">Заселений: 0<',
+            ])
+            ->assertMountedActionModalDontSeeHtml(['<img', 'sch-guest-card-stays-active']);
+    }
+
+    /** Особые приметы в окне «Клиент» экранируются и сохраняют переносы строк. */
+    public function test_client_card_notes_are_escaped_with_line_breaks(): void
+    {
+        $bed = $this->makeBed();
+        $guest = User::factory()->create(['notes' => "Шрам на руке\n<b>Аллергия</b>"]);
+
+        $this->createStay($bed)
+            ->setActionData(['user_id' => $guest->id])
+            ->assertActionMounted($this->guestCard())
+            ->assertMountedActionModalSeeHtml("sch-guest-card-notes\">Шрам на руке\n&lt;b&gt;Аллергия&lt;/b&gt;<")
+            ->assertMountedActionModalDontSeeHtml('<b>Аллергия');
     }
 
     /** Путь документов есть, а файла на диске нет: окно «Клиент» пишет «нет» вместо пустой картинки. */
@@ -404,7 +452,7 @@ class ScheduleStayActionsTest extends TestCase
         $this->createStay($bed)
             ->setActionData(['user_id' => $guest->id])
             ->assertActionMounted($this->guestCard())
-            ->assertMountedActionModalSee(['Документы', 'нет'])
+            ->assertMountedActionModalSee('Документы: нет')
             ->assertMountedActionModalDontSeeHtml(['<img', 'missing.png']);
     }
 
