@@ -9,16 +9,6 @@
 
 <x-filament-panels::page>
     <style>
-        /* Панель считает шапку высотой 4rem: меню прилипает на 4rem от верха и вместе с областью содержимого получает
-           высоту «окно минус 4rem». С высоким логотипом шапка выше, поэтому страница прокручивается на разницу, а меню
-           уезжает под шапку. На графике прокручивается только сетка: здесь берётся настоящая высота шапки (fitHeight). */
-        .fi-main-ctn { min-height: 0 !important; }
-
-        .fi-sidebar {
-            top: var(--sch-topbar-h, 4rem) !important;
-            height: calc(100dvh - var(--sch-topbar-h, 4rem)) !important;
-        }
-
         .sch-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
         .sch-toolbar .sch-date { width: 11rem; }
 
@@ -340,12 +330,6 @@
                 // атрибут style самой сетки Livewire перезаписывает при каждой перерисовке.
                 fitHeight() {
                     const root = document.documentElement;
-                    const topbar = document.querySelector('.fi-topbar-ctn');
-
-                    if (topbar) {
-                        root.style.setProperty('--sch-topbar-h', Math.ceil(topbar.getBoundingClientRect().height) + 'px');
-                    }
-
                     const top = this.$el.getBoundingClientRect().top + window.scrollY;
                     let height = Math.floor(window.innerHeight - top);
 
@@ -363,9 +347,7 @@
                 // Компонент удалён посреди перетаскивания: останавливаем автопрокрутку и убираем «тень».
                 destroy() {
                     window.removeEventListener('resize', onResize);
-                    document.documentElement.style.removeProperty('--sch-avail-h');
-                    document.documentElement.style.removeProperty('--sch-topbar-h');
-                    this.cancel();
+                    document.documentElement.style.removeProperty('--sch-avail-h');                    this.cancel();
                 },
 
                 down(e) {
